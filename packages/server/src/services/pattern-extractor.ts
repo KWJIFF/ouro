@@ -237,8 +237,9 @@ async function upsertPattern(pattern: SignalPattern): Promise<void> {
 
 function detectLanguage(text: string): string {
   // Simple heuristic — CJK character detection
-  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+  
   if (/[\u3040-\u309f\u30a0-\u30ff]/.test(text)) return 'ja';
+  if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
   if (/[\uac00-\ud7af]/.test(text)) return 'ko';
   if (/[\u0400-\u04ff]/.test(text)) return 'ru';
   if (/[\u0600-\u06ff]/.test(text)) return 'ar';
