@@ -5,32 +5,29 @@ import { captureSignal, getSignal, getRecentSignals, updateSignalStatus, findSim
 import { parseIntent } from '../services/intent-parser';
 import { generatePlan } from '../services/execution-planner';
 import { executePlan } from '../services/execution-runner';
-import { recoverSignals } from '../services/signal-recovery';
+import { buildArtifacts } from '../services/artifact-builder';
+import { runRecoveryWorker } from '../queue/workers/recovery-worker';
+import { runEvolutionWorker } from '../queue/workers/evolution-worker';
+import { emitSignalParsed, emitExecutionPlanned, emitExecutionCompleted } from '../websocket/server';
 import { query, getMany } from '../db/client';
-import { embedText } from '../ai/llm-client';
 
 export async function signalRoutes(app: FastifyInstance) {
 
   // ===== POST /api/signals — THE core endpoint =====
-  // Accepts: JSON body OR multipart/form-data (for file uploads)
   app.post('/api/signals', async (request, reply) => {
     let text = '';
     let files: FilePayload[] = [];
     let urls: string[] = [];
-    let metadata: Record<string, any> = {};
     let contextData: Record<string, any> = {};
 
     const contentType = request.headers['content-type'] || '';
 
     if (contentType.includes('multipart/form-data')) {
-      // Handle file uploads
       const parts = request.parts();
       for await (const part of parts) {
         if (part.type === 'file') {
           const chunks: Buffer[] = [];
-          for await (const chunk of part.file) {
-            chunks.push(chunk);
-          }
+          for await (const chunk of part.file) chunks.push(chunk);
           files.push({
             filename: part.filename || 'unnamed',
             mime_type: part.mimetype || 'application/octet-stream',
@@ -38,42 +35,38 @@ export async function signalRoutes(app: FastifyInstance) {
             buffer: Buffer.concat(chunks),
           });
         } else {
-          // Form field
           const value = part.value as string;
-          if (part.fieldname === 'text' || part.fieldname === 'content' || part.fieldname === 'signal') text = value;
-          else if (part.fieldname === 'urls') urls = JSON.parse(value || '[]');
-          else if (part.fieldname === 'context') contextData = JSON.parse(value || '{}');
-          else if (part.fieldname === 'metadata') metadata = JSON.parse(value || '{}');
+          if (['text', 'content', 'signal'].includes(part.fieldname)) text = value;
+          else if (part.fieldname === 'urls') try { urls = JSON.parse(value); } catch {}
+          else if (part.fieldname === 'context') try { contextData = JSON.parse(value); } catch {}
         }
       }
     } else {
-      // JSON body
-      const body = request.body as any;
+      const body = request.body as any || {};
       text = body.text || body.content || body.signal || '';
-      files = body.files || [];
       urls = body.urls || [];
-      metadata = body.metadata || {};
       contextData = body.context || {};
     }
 
     const input = {
-      source: { type: 'api' as const, ...metadata.source },
-      payload: { text, files, urls, metadata },
+      source: { type: 'api' as const },
+      payload: { text, files, urls, metadata: {} },
       context: {
         timestamp: now(),
         session_id: contextData.session_id || generateId(),
-        device: contextData.device || request.headers['user-agent'] || 'unknown',
+        device: contextData.device || (request.headers['user-agent'] || 'unknown').slice(0, 100),
         ...contextData,
       },
     };
 
     try {
-      // Layer 1: Capture (multi-modal processing happens here)
+      // === LAYER 1: Signal Capture ===
       const signal = await captureSignal(input);
 
-      // Layer 2: Parse intent
+      // === LAYER 2: Intent Parsing ===
       const intent = await parseIntent(signal);
       await updateSignalStatus(signal.id, 'parsed');
+      emitSignalParsed(signal.id, intent);
 
       if (intent.needs_clarification) {
         return reply.code(200).send({
@@ -84,35 +77,29 @@ export async function signalRoutes(app: FastifyInstance) {
         });
       }
 
-      // Layer 3: Plan + Execute
+      // === LAYER 3: Execution Planning + Running ===
       await updateSignalStatus(signal.id, 'executing');
       const plan = await generatePlan(intent);
-      const executedPlan = await executePlan(plan);
+      emitExecutionPlanned(signal.id, { plan_id: plan.id, steps: plan.steps.length });
 
-      // Layer 5: Signal recovery (background)
-      recoverSignals(signal, intent, executedPlan).catch(e =>
-        console.error('Signal recovery failed:', e)
-      );
+      const executedPlan = await executePlan(plan, signal.id);
+
+      // === LAYER 4: Artifact Building ===
+      const artifacts = await buildArtifacts(executedPlan, signal.id, intent.description);
 
       const finalStatus = executedPlan.status === 'completed' ? 'completed' : 'failed';
       await updateSignalStatus(signal.id, finalStatus);
+      emitExecutionCompleted(signal.id, executedPlan, artifacts);
 
-      const artifacts = executedPlan.steps
-        .filter(s => s.output?.artifacts)
-        .flatMap(s => s.output.artifacts);
-
-      // Store artifacts in DB
-      for (const artifact of artifacts) {
-        await query(
-          `INSERT INTO artifacts (id, plan_id, signal_id, artifact_type, title, description, content_url, content_hash, metadata, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [generateId(), plan.id, signal.id, artifact.metadata?.type || 'other',
-           intent.description.slice(0, 100), intent.description,
-           '', // content_url — inline for now
-           generateId(), // content_hash placeholder
-           JSON.stringify(artifact.metadata), now()]
-        );
-      }
+      // === LAYER 5+6: Recovery + Evolution (async, non-blocking) ===
+      setImmediate(async () => {
+        try {
+          await runRecoveryWorker(signal.id);
+          await runEvolutionWorker();
+        } catch (e) {
+          console.error('[Background] Recovery/Evolution failed:', e);
+        }
+      });
 
       return reply.code(201).send({
         signal_id: signal.id,
@@ -122,15 +109,22 @@ export async function signalRoutes(app: FastifyInstance) {
           status: executedPlan.status,
           steps: executedPlan.steps.map(s => ({ id: s.id, tool: s.tool, status: s.status })),
         },
-        artifacts,
+        artifacts: artifacts.map(a => ({
+          id: a.id,
+          type: a.artifact_type,
+          title: a.title,
+          content: a.metadata?.inline_content,
+          metadata: a.metadata,
+          version: a.version,
+        })),
       });
     } catch (error: any) {
-      console.error('Signal processing error:', error);
+      console.error('[Signal] Processing error:', error);
       return reply.code(500).send({ error: error.message });
     }
   });
 
-  // ===== POST /api/signals/:id/clarify =====
+  // Clarify
   app.post('/api/signals/:id/clarify', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { answer } = request.body as { answer: string };
@@ -140,63 +134,52 @@ export async function signalRoutes(app: FastifyInstance) {
     signal.normalized_text += `\n[Clarification: ${answer}]`;
     const intent = await parseIntent(signal);
     const plan = await generatePlan(intent);
-    const executedPlan = await executePlan(plan);
+    const executedPlan = await executePlan(plan, signal.id);
+    const artifacts = await buildArtifacts(executedPlan, signal.id, intent.description);
 
-    const artifacts = executedPlan.steps.filter(s => s.output?.artifacts).flatMap(s => s.output.artifacts);
     return reply.code(200).send({
       signal_id: id,
       intent: { type: intent.intent_type, description: intent.description },
       execution: { plan_id: plan.id, status: executedPlan.status },
-      artifacts,
+      artifacts: artifacts.map(a => ({ id: a.id, type: a.artifact_type, title: a.title, content: a.metadata?.inline_content, metadata: a.metadata })),
     });
   });
 
-  // ===== GET /api/signals =====
+  // List signals
   app.get('/api/signals', async (request, reply) => {
     const { limit = 20, offset = 0, modality, status } = request.query as any;
     let sql = 'SELECT * FROM signals';
     const conditions: string[] = [];
     const params: any[] = [];
-
     if (modality) { params.push(modality); conditions.push(`modality = $${params.length}`); }
     if (status) { params.push(status); conditions.push(`status = $${params.length}`); }
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
-
     sql += ' ORDER BY created_at DESC';
-    params.push(limit); sql += ` LIMIT $${params.length}`;
-    params.push(offset); sql += ` OFFSET $${params.length}`;
-
+    params.push(parseInt(limit)); sql += ` LIMIT $${params.length}`;
+    params.push(parseInt(offset)); sql += ` OFFSET $${params.length}`;
     const signals = await getMany(sql, params);
     const total = await query('SELECT COUNT(*) FROM signals');
-    return reply.send({ signals, total: parseInt(total.rows[0].count), limit, offset });
+    return reply.send({ signals, total: parseInt(total.rows[0].count) });
   });
 
-  // ===== GET /api/signals/:id =====
+  // Get signal detail
   app.get('/api/signals/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
     const signal = await getSignal(id);
     if (!signal) return reply.code(404).send({ error: 'Signal not found' });
-
-    const intents = await getMany('SELECT * FROM intents WHERE signal_id = $1 ORDER BY created_at', [id]);
-    const plans = await getMany('SELECT * FROM execution_plans WHERE signal_id = $1 ORDER BY created_at', [id]);
-    const artifacts = await getMany('SELECT * FROM artifacts WHERE signal_id = $1 ORDER BY created_at', [id]);
-    const feedbacks = await getMany('SELECT * FROM feedback WHERE signal_id = $1 ORDER BY created_at', [id]);
-
+    const intents = await getMany('SELECT * FROM intents WHERE signal_id = $1', [id]);
+    const plans = await getMany('SELECT * FROM execution_plans WHERE signal_id = $1', [id]);
+    const artifacts = await getMany('SELECT * FROM artifacts WHERE signal_id = $1 ORDER BY version DESC', [id]);
+    const feedbacks = await getMany('SELECT * FROM feedback WHERE signal_id = $1', [id]);
     return reply.send({ signal, intents, plans, artifacts, feedbacks });
   });
 
-  // ===== GET /api/signals/:id/similar =====
+  // Similar signals
   app.get('/api/signals/:id/similar', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { limit = 5 } = request.query as any;
     const signal = await getSignal(id);
-    if (!signal) return reply.code(404).send({ error: 'Signal not found' });
-
-    if (!signal.embedding) {
-      return reply.send({ similar: [] });
-    }
-
-    const similar = await findSimilarSignals(signal.embedding, limit);
-    return reply.send({ similar: similar.filter(s => s.id !== id) });
+    if (!signal?.embedding) return reply.send({ similar: [] });
+    const similar = await findSimilarSignals(signal.embedding, 5);
+    return reply.send({ similar: similar.filter((s: any) => s.id !== id) });
   });
 }

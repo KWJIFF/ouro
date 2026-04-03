@@ -91,7 +91,7 @@ export async function loadRemoteTool(url: string): Promise<boolean> {
     // Fetch manifest
     const manifestRes = await fetch(`${url}/manifest`);
     if (!manifestRes.ok) return false;
-    const manifest: ToolManifest = await manifestRes.json();
+    const manifest = await manifestRes.json() as ToolManifest;
 
     const tool: OuroTool = {
       manifest,

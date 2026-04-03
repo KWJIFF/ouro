@@ -11,7 +11,10 @@
     "dev:server": "cd packages/server && npm run dev",
     "dev:web": "cd packages/web && npm run dev",
     "build": "npm run build --workspaces",
-    "lint": "eslint packages/*/src --ext .ts,.tsx"
+    "lint": "eslint packages/*/src --ext .ts,.tsx",
+    "test": "cd packages/server && npm run test",
+    "typecheck": "cd packages/server && npx tsc --noEmit && cd ../web && npx tsc --noEmit",
+    "cli": "cd packages/cli && npx tsx src/index.ts"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

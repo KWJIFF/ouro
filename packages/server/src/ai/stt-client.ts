@@ -25,6 +25,6 @@ export async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Pr
     return `[Audio transcription failed: ${response.status}]`;
   }
 
-  const data = await response.json();
+  const data = await response.json() as { text?: string };
   return data.text || '';
 }

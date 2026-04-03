@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: cd packages/core && npm install
+      - run: cd packages/server && npm install --legacy-peer-deps
+      - run: cd packages/web && npm install --legacy-peer-deps
+      - name: Typecheck Server
+        run: cd packages/server && npx tsc --noEmit
+      - name: Typecheck Web
+        run: cd packages/web && npx tsc --noEmit
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: cd packages/core && npm install
+      - run: cd packages/server && npm install --legacy-peer-deps
+      - name: Run Tests
+        run: cd packages/server && npx vitest run
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: cd packages/core && npm install
+      - run: cd packages/web && npm install --legacy-peer-deps
+      - name: Build Next.js
+        run: cd packages/web && npx next build

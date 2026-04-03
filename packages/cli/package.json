@@ -1,0 +1,9 @@
+{
+  "name": "@ouro/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": { "ouro": "dist/index.js" },
+  "scripts": { "build": "tsc", "dev": "tsx src/index.ts" },
+  "dependencies": { "commander": "^12.0.0", "node-fetch": "^3.3.0" },
+  "devDependencies": { "tsx": "^4.7.0", "typescript": "^5.4.0", "@types/node": "^20.11.0" }
+}
