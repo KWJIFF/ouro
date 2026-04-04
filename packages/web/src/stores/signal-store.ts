@@ -1,141 +1,171 @@
 import { create } from 'zustand';
 
 /**
- * Signal Store — Client-side state management.
+ * Signal Store — Central state management for Ouro frontend.
  * 
- * Tracks:
- * - Recent signals submitted in this session
- * - Current execution state (for live streaming)
- * - Connection status (online/offline/degraded)
- * - UI preferences
+ * Manages:
+ * - Signal submission state
+ * - Execution status tracking
+ * - Artifact display
+ * - Feedback tracking
+ * - WebSocket connection state
+ * - Offline queue
+ * - User preferences
  */
 
-interface SignalEntry {
+interface Signal {
+  id?: string;
   text: string;
-  signal_id?: string;
-  intent_type?: string;
+  modality?: string;
   status?: string;
+  intent?: { type: string; confidence: number; description: string };
+  artifacts?: Array<{
+    id: string;
+    type: string;
+    content: string;
+    metadata: Record<string, any>;
+    version: number;
+  }>;
+  execution?: {
+    planId: string;
+    status: string;
+    steps: Array<{ id: string; tool: string; status: string }>;
+    durationMs?: number;
+  };
+  createdAt: string;
+}
+
+interface ExecutionEvent {
+  type: string;
+  data: any;
   timestamp: string;
-  artifacts?: any[];
 }
 
-interface ExecutionState {
-  signal_id: string | null;
-  status: 'idle' | 'processing' | 'streaming' | 'completed' | 'failed';
-  current_step?: string;
-  steps_completed: number;
-  steps_total: number;
-  artifacts: any[];
-  started_at?: number;
-  duration_ms?: number;
-}
-
-interface ConnectionState {
-  api: boolean;
-  websocket: boolean;
-  database: boolean;
-}
-
-interface UIPreferences {
+interface UserPreferences {
   theme: 'dark' | 'light' | 'system';
-  compactMode: boolean;
-  showRawEvents: boolean;
+  language: string;
+  showExecutionDetails: boolean;
   autoExpandArtifacts: boolean;
-  feedbackReminder: boolean;
+  notificationsEnabled: boolean;
+  feedbackReminders: boolean;
 }
 
-interface SignalStore {
-  // Signal history
-  signals: SignalEntry[];
-  addSignal: (signal: SignalEntry) => void;
-  clearSignals: () => void;
-
-  // Execution state
-  execution: ExecutionState;
-  setCurrentExecution: (result: any) => void;
-  updateExecutionStep: (stepId: string, status: string) => void;
-  resetExecution: () => void;
-
-  // Processing flag
-  isProcessing: boolean;
-  setProcessing: (v: boolean) => void;
-
-  // Connection
-  connection: ConnectionState;
-  setConnection: (partial: Partial<ConnectionState>) => void;
-
-  // Preferences
-  preferences: UIPreferences;
-  setPreference: <K extends keyof UIPreferences>(key: K, value: UIPreferences[K]) => void;
-
-  // Session
-  sessionId: string;
-  signalCount: number;
-}
-
-const defaultExecution: ExecutionState = {
-  signal_id: null,
-  status: 'idle',
-  steps_completed: 0,
-  steps_total: 0,
-  artifacts: [],
-};
-
-const defaultPreferences: UIPreferences = {
-  theme: 'dark',
-  compactMode: false,
-  showRawEvents: false,
-  autoExpandArtifacts: true,
-  feedbackReminder: true,
-};
-
-export const useSignalStore = create<SignalStore>((set, get) => ({
+interface SignalState {
   // Signals
-  signals: [],
-  addSignal: (signal) => set(state => ({
-    signals: [signal, ...state.signals].slice(0, 100),
-    signalCount: state.signalCount + 1,
-  })),
-  clearSignals: () => set({ signals: [], signalCount: 0 }),
+  signals: Signal[];
+  currentSignal: Signal | null;
+  isProcessing: boolean;
 
   // Execution
-  execution: { ...defaultExecution },
-  setCurrentExecution: (result) => set({
-    execution: {
-      signal_id: result.signal_id,
-      status: result.execution?.status === 'completed' ? 'completed' : 'processing',
-      steps_completed: result.execution?.steps?.filter((s: any) => s.status === 'completed').length || 0,
-      steps_total: result.execution?.steps?.length || 0,
-      artifacts: result.artifacts || [],
-      started_at: Date.now(),
-    },
-  }),
-  updateExecutionStep: (stepId, status) => set(state => ({
-    execution: {
-      ...state.execution,
-      current_step: stepId,
-      steps_completed: status === 'completed' ? state.execution.steps_completed + 1 : state.execution.steps_completed,
-    },
-  })),
-  resetExecution: () => set({ execution: { ...defaultExecution } }),
-
-  // Processing
-  isProcessing: false,
-  setProcessing: (v) => set({ isProcessing: v }),
+  currentExecution: any | null;
+  executionEvents: ExecutionEvent[];
 
   // Connection
-  connection: { api: true, websocket: false, database: true },
-  setConnection: (partial) => set(state => ({
-    connection: { ...state.connection, ...partial },
-  })),
+  isConnected: boolean;
+  isOnline: boolean;
+
+  // Offline queue
+  offlineQueue: Array<{ text: string; timestamp: string }>;
 
   // Preferences
-  preferences: { ...defaultPreferences },
-  setPreference: (key, value) => set(state => ({
+  preferences: UserPreferences;
+
+  // Stats
+  totalSignals: number;
+  totalArtifacts: number;
+
+  // Actions
+  addSignal: (signal: Partial<Signal>) => void;
+  setProcessing: (processing: boolean) => void;
+  setCurrentExecution: (execution: any) => void;
+  addExecutionEvent: (event: ExecutionEvent) => void;
+  clearExecutionEvents: () => void;
+  setConnected: (connected: boolean) => void;
+  setOnline: (online: boolean) => void;
+  addToOfflineQueue: (text: string) => void;
+  removeFromOfflineQueue: (index: number) => void;
+  clearOfflineQueue: () => void;
+  setPreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
+  updateStats: (signals: number, artifacts: number) => void;
+  reset: () => void;
+}
+
+const defaultPreferences: UserPreferences = {
+  theme: 'dark',
+  language: 'en',
+  showExecutionDetails: true,
+  autoExpandArtifacts: true,
+  notificationsEnabled: true,
+  feedbackReminders: true,
+};
+
+export const useSignalStore = create<SignalState>((set, get) => ({
+  // Initial state
+  signals: [],
+  currentSignal: null,
+  isProcessing: false,
+  currentExecution: null,
+  executionEvents: [],
+  isConnected: false,
+  isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  offlineQueue: [],
+  preferences: defaultPreferences,
+  totalSignals: 0,
+  totalArtifacts: 0,
+
+  // Actions
+  addSignal: (signal) => set((state) => ({
+    signals: [
+      { text: signal.text || '', createdAt: new Date().toISOString(), ...signal },
+      ...state.signals,
+    ].slice(0, 100), // Keep last 100 in memory
+    currentSignal: { text: signal.text || '', createdAt: new Date().toISOString(), ...signal },
+    totalSignals: state.totalSignals + 1,
+  })),
+
+  setProcessing: (processing) => set({ isProcessing: processing }),
+
+  setCurrentExecution: (execution) => set({
+    currentExecution: execution,
+    totalArtifacts: execution?.artifacts?.length
+      ? get().totalArtifacts + execution.artifacts.length
+      : get().totalArtifacts,
+  }),
+
+  addExecutionEvent: (event) => set((state) => ({
+    executionEvents: [...state.executionEvents, event].slice(-200), // Keep last 200
+  })),
+
+  clearExecutionEvents: () => set({ executionEvents: [] }),
+
+  setConnected: (connected) => set({ isConnected: connected }),
+
+  setOnline: (online) => set({ isOnline: online }),
+
+  addToOfflineQueue: (text) => set((state) => ({
+    offlineQueue: [...state.offlineQueue, { text, timestamp: new Date().toISOString() }],
+  })),
+
+  removeFromOfflineQueue: (index) => set((state) => ({
+    offlineQueue: state.offlineQueue.filter((_, i) => i !== index),
+  })),
+
+  clearOfflineQueue: () => set({ offlineQueue: [] }),
+
+  setPreference: (key, value) => set((state) => ({
     preferences: { ...state.preferences, [key]: value },
   })),
 
-  // Session
-  sessionId: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-  signalCount: 0,
+  updateStats: (signals, artifacts) => set({ totalSignals: signals, totalArtifacts: artifacts }),
+
+  reset: () => set({
+    signals: [],
+    currentSignal: null,
+    isProcessing: false,
+    currentExecution: null,
+    executionEvents: [],
+    offlineQueue: [],
+    totalSignals: 0,
+    totalArtifacts: 0,
+  }),
 }));
