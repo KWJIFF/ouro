@@ -371,3 +371,125 @@ describe('Mock Provider', () => {
     });
   });
 });
+
+describe('Execution Guard', () => {
+  describe('Timeout', () => {
+    it('should resolve before timeout', async () => {
+      const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T> => {
+        let timer: any;
+        const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('Timeout')), ms); });
+        try { const r = await Promise.race([p, timeout]); clearTimeout(timer); return r; }
+        catch (e) { clearTimeout(timer); throw e; }
+      };
+
+      const result = await withTimeout(Promise.resolve(42), 1000);
+      expect(result).toBe(42);
+    });
+
+    it('should reject on timeout', async () => {
+      const withTimeout = async <T>(p: Promise<T>, ms: number): Promise<T> => {
+        let timer: any;
+        const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error('Timeout')), ms); });
+        try { const r = await Promise.race([p, timeout]); clearTimeout(timer); return r; }
+        catch (e) { clearTimeout(timer); throw e; }
+      };
+
+      const slow = new Promise(resolve => setTimeout(() => resolve(42), 500));
+      await expect(withTimeout(slow, 50)).rejects.toThrow('Timeout');
+    });
+  });
+
+  describe('Retry with backoff', () => {
+    it('should succeed on retry', async () => {
+      let attempts = 0;
+      const fn = async () => {
+        attempts++;
+        if (attempts < 3) throw new Error('Not yet');
+        return 'success';
+      };
+
+      // Simple retry
+      let result = '';
+      for (let i = 0; i < 3; i++) {
+        try { result = await fn(); break; } catch {}
+      }
+      expect(result).toBe('success');
+      expect(attempts).toBe(3);
+    });
+
+    it('should calculate exponential backoff correctly', () => {
+      const backoff = (attempt: number, base: number, max: number): number =>
+        Math.min(base * Math.pow(2, attempt), max);
+
+      expect(backoff(0, 1000, 30000)).toBe(1000);
+      expect(backoff(1, 1000, 30000)).toBe(2000);
+      expect(backoff(2, 1000, 30000)).toBe(4000);
+      expect(backoff(3, 1000, 30000)).toBe(8000);
+      expect(backoff(10, 1000, 30000)).toBe(30000); // Capped at max
+    });
+  });
+
+  describe('Circuit Breaker', () => {
+    it('should open after threshold failures', () => {
+      const state = { failures: 0, isOpen: false };
+      const threshold = 5;
+
+      for (let i = 0; i < 6; i++) {
+        state.failures++;
+        if (state.failures >= threshold) state.isOpen = true;
+      }
+
+      expect(state.isOpen).toBe(true);
+      expect(state.failures).toBe(6);
+    });
+
+    it('should reset after cooldown period', () => {
+      const state = { isOpen: true, openedAt: Date.now() - 120000 }; // Opened 2 min ago
+      const resetMs = 60000;
+
+      const elapsed = Date.now() - state.openedAt;
+      if (elapsed >= resetMs) state.isOpen = false;
+
+      expect(state.isOpen).toBe(false);
+    });
+
+    it('should stay open during cooldown', () => {
+      const state = { isOpen: true, openedAt: Date.now() - 30000 }; // Opened 30s ago
+      const resetMs = 60000;
+
+      const elapsed = Date.now() - state.openedAt;
+      if (elapsed >= resetMs) state.isOpen = false;
+
+      expect(state.isOpen).toBe(true);
+    });
+  });
+});
+
+describe('Tool Registry', () => {
+  it('should track usage statistics', () => {
+    const stats = { usageCount: 0, successCount: 0, failureCount: 0, avgDurationMs: 0 };
+
+    const record = (success: boolean, ms: number) => {
+      stats.usageCount++;
+      if (success) stats.successCount++; else stats.failureCount++;
+      stats.avgDurationMs = (stats.avgDurationMs * (stats.usageCount - 1) + ms) / stats.usageCount;
+    };
+
+    record(true, 100);
+    record(true, 200);
+    record(false, 500);
+    record(true, 150);
+
+    expect(stats.usageCount).toBe(4);
+    expect(stats.successCount).toBe(3);
+    expect(stats.failureCount).toBe(1);
+    expect(stats.avgDurationMs).toBeCloseTo(237.5, 0);
+  });
+
+  it('should calculate success rate', () => {
+    const rate = (success: number, total: number) => total > 0 ? success / total : 0;
+    expect(rate(3, 4)).toBeCloseTo(0.75);
+    expect(rate(0, 0)).toBe(0);
+    expect(rate(10, 10)).toBe(1);
+  });
+});

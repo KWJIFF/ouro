@@ -27,6 +27,10 @@ import { socialPostTool } from './social-post';
 import { jsonTransformerTool } from './json-transformer';
 import { csvAnalyzerTool } from './csv-analyzer';
 import { meetingNotesTool } from './meeting-notes';
+import { codeReviewTool } from './code-review';
+import { changelogGenTool } from './changelog-gen';
+import { contractWriterTool } from './contract-writer';
+import { interviewPrepTool } from './interview-prep';
 import { scanLocalPlugins } from './plugin-loader';
 import * as path from 'path';
 
@@ -40,6 +44,7 @@ export function registerBuiltInTools(): void {
     colorPaletteTool, regexBuilderTool, gitHelperTool, learningPlanTool,
     socialPostTool, jsonTransformerTool,
     csvAnalyzerTool, meetingNotesTool,
+    codeReviewTool, changelogGenTool, contractWriterTool, interviewPrepTool,
   ];
   for (const tool of tools) toolRegistry.register(tool);
   console.log(`[Tools] Registered ${toolRegistry.getToolCount()} built-in tools`);
