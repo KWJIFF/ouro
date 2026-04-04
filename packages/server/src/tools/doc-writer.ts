@@ -5,82 +5,78 @@ const manifest: ToolManifest = {
   id: 'doc_writer',
   version: '0.2.0',
   name: 'Document Writer',
-  description: 'Write any type of document: articles, reports, proposals, memos, letters, technical documentation, specifications, tutorials, READMEs, and long-form content. Handles structure, tone, audience, and formatting.',
+  description: 'Write professional documents: articles, reports, proposals, memos, meeting notes, technical specs, user stories, PRDs, design docs, incident reports, and any other structured writing. Adapts tone, structure, and depth to audience and purpose.',
   capabilities: [
-    'document_writing', 'article_writing', 'report', 'proposal',
-    'technical_writing', 'tutorial', 'memo', 'letter', 'specification',
-    'long_form_content', 'editing', 'proofreading',
+    'document_writing', 'article_writing', 'report_writing', 'proposal_writing',
+    'memo_writing', 'technical_spec', 'user_story', 'prd', 'design_doc',
+    'incident_report', 'meeting_notes', 'creative_writing',
   ],
   input_schema: {
     type: 'object',
     properties: {
-      topic: { type: 'string', description: 'What to write about' },
-      type: { type: 'string', description: 'article, report, proposal, memo, letter, tutorial, spec, readme, essay, story' },
-      audience: { type: 'string', description: 'Who will read this' },
-      tone: { type: 'string', description: 'formal, casual, technical, persuasive, narrative, academic' },
-      length: { type: 'string', description: 'short (500w), medium (1500w), long (3000w+), custom word count' },
-      outline: { type: 'array', items: { type: 'string' }, description: 'Custom section outline' },
-      style_guide: { type: 'string', description: 'Style guide to follow (AP, Chicago, APA, custom)' },
-      context: { type: 'string', description: 'Background information or source material' },
+      prompt: { type: 'string', description: 'What to write' },
+      type: { type: 'string', description: 'Document type: article, report, proposal, memo, spec, prd, design_doc, incident_report, meeting_notes, essay, story' },
+      tone: { type: 'string', description: 'Writing tone: professional, academic, casual, technical, persuasive, narrative' },
+      audience: { type: 'string', description: 'Target audience' },
+      length: { type: 'string', description: 'short (500w), medium (1500w), long (3000w+)' },
+      structure: { type: 'string', description: 'Custom structure/outline (optional)' },
+      references: { type: 'array', items: { type: 'string' }, description: 'Sources or context to incorporate' },
     },
-    required: ['topic'],
+    required: ['prompt'],
   },
   output_schema: {
     type: 'object',
-    properties: {
-      document: { type: 'string' },
-      word_count: { type: 'number' },
-      sections: { type: 'array' },
-    },
+    properties: { document: { type: 'string' }, metadata: { type: 'object' } },
   },
-  tags: ['writing', 'document', 'content', 'article'],
+  tags: ['writing', 'document', 'content'],
 };
 
 export const docWriterTool: OuroTool = {
   manifest,
 
   async execute(input: ToolInput): Promise<ToolOutput> {
-    const { topic, type, audience, tone, length, outline, style_guide, context } = input.parameters;
+    const { prompt, type, tone, audience, length, structure, references } = input.parameters;
     const startTime = Date.now();
 
-    const typeGuides: Record<string, string> = {
-      article: 'Write an engaging article with a compelling hook, clear thesis, supporting evidence, and a strong conclusion. Include subheadings for readability.',
-      report: 'Write a structured report with executive summary, methodology, findings, analysis, and recommendations. Use data-driven language.',
-      proposal: 'Write a persuasive proposal with problem statement, proposed solution, implementation plan, budget considerations, and expected outcomes.',
-      memo: 'Write a concise business memo with clear purpose, background, key points, and action items. Keep it under 1 page.',
-      letter: 'Write a professional letter with proper salutation, clear body paragraphs, and appropriate closing.',
-      tutorial: 'Write a step-by-step tutorial with prerequisites, numbered steps, code examples where relevant, common pitfalls, and verification steps.',
-      spec: 'Write a technical specification with overview, requirements (functional and non-functional), architecture, API contracts, and acceptance criteria.',
-      readme: 'Write a comprehensive README with project overview, features, installation, usage examples, configuration, API reference, contributing guidelines, and license.',
-      essay: 'Write a thoughtful essay with a clear thesis, well-structured arguments, evidence, counterarguments, and a compelling conclusion.',
-      story: 'Write a narrative with vivid characters, setting, conflict, rising action, climax, and resolution.',
+    const docTemplates: Record<string, string> = {
+      article: `Write a well-structured article with: engaging introduction, clear thesis, supporting sections with evidence, and a compelling conclusion. Include subheadings for readability.`,
+      report: `Write a formal report with: executive summary, background, methodology (if applicable), findings, analysis, conclusions, and recommendations. Use data-driven language.`,
+      proposal: `Write a persuasive proposal with: problem statement, proposed solution, approach/methodology, timeline, budget considerations, expected outcomes, and call to action.`,
+      memo: `Write a concise business memo with: header (To/From/Date/Re), purpose statement, key points, and action items. Keep it under 1 page.`,
+      spec: `Write a technical specification with: overview, requirements (functional and non-functional), constraints, architecture decisions, API contracts, data models, and success criteria.`,
+      prd: `Write a product requirements document with: problem statement, user personas, user stories, acceptance criteria, scope (in/out), dependencies, success metrics, and timeline.`,
+      design_doc: `Write a design document with: context, problem statement, proposed design, alternatives considered, trade-offs, implementation plan, testing strategy, and rollback plan.`,
+      incident_report: `Write an incident report with: summary, timeline of events, impact assessment, root cause analysis, resolution steps taken, lessons learned, and action items to prevent recurrence.`,
+      meeting_notes: `Write structured meeting notes with: date/attendees, agenda items discussed, key decisions made, action items (who/what/when), and next meeting date/topics.`,
+      essay: `Write a thoughtful essay with: compelling opening, clear argument development, supporting evidence, counterargument acknowledgment, and a memorable conclusion.`,
+      story: `Write an engaging narrative with: setting establishment, character introduction, conflict development, rising tension, climax, and resolution. Show don't tell.`,
     };
 
-    const lengthGuide = length === 'short' ? 'Keep it concise, around 500 words.' :
-                        length === 'long' ? 'Be comprehensive, 3000+ words.' :
-                        length?.match(/\d+/) ? `Target approximately ${length} words.` :
-                        'Aim for 1000-1500 words (medium length).';
+    const template = docTemplates[type || 'article'] || docTemplates.article;
+    const wordTarget = length === 'short' ? '500' : length === 'long' ? '3000+' : '1500';
 
-    const systemPrompt = [
-      `You are an expert writer. ${typeGuides[type || 'article'] || typeGuides.article}`,
-      `Audience: ${audience || 'general professional audience'}`,
-      `Tone: ${tone || 'professional, clear, and engaging'}`,
-      lengthGuide,
-      style_guide ? `Follow ${style_guide} style guide.` : '',
-      outline?.length ? `Follow this outline:\n${outline.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}` : '',
-      context ? `Background context:\n${context}` : '',
-      'Format in clean markdown. Do NOT include word count or meta-commentary in the output.',
-    ].filter(Boolean).join('\n\n');
+    let systemContent = `You are an expert writer. ${template}
+Tone: ${tone || 'professional'}
+Audience: ${audience || 'general professional'}
+Target length: ~${wordTarget} words.`;
+
+    if (structure) {
+      systemContent += `\n\nFollow this structure:\n${structure}`;
+    }
+
+    if (references?.length) {
+      systemContent += `\n\nIncorporate context from:\n${references.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n')}`;
+    }
+
+    systemContent += `\n\nOutput clean markdown. No meta-commentary about the writing itself.`;
 
     const response = await callAI([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Write about: ${topic}` },
+      { role: 'system', content: systemContent },
+      { role: 'user', content: prompt },
     ], {
-      temperature: type === 'story' || type === 'essay' ? 0.8 : type === 'spec' ? 0.3 : 0.6,
+      temperature: tone === 'creative' || type === 'story' ? 0.8 : 0.5,
       max_tokens: length === 'long' ? 8192 : length === 'short' ? 2048 : 4096,
     });
-
-    const wordCount = response.content.split(/\s+/).length;
 
     return {
       success: true,
@@ -90,10 +86,9 @@ export const docWriterTool: OuroTool = {
         metadata: {
           type: 'document',
           format: 'markdown',
-          subtype: type || 'article',
-          word_count: wordCount,
-          audience: audience || 'general',
+          doc_type: type || 'article',
           tone: tone || 'professional',
+          word_count: response.content.split(/\s+/).length,
         },
       }],
       metrics: {

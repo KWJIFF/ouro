@@ -25,6 +25,8 @@ import { gitHelperTool } from './git-helper';
 import { learningPlanTool } from './learning-plan';
 import { socialPostTool } from './social-post';
 import { jsonTransformerTool } from './json-transformer';
+import { csvAnalyzerTool } from './csv-analyzer';
+import { meetingNotesTool } from './meeting-notes';
 import { scanLocalPlugins } from './plugin-loader';
 import * as path from 'path';
 
@@ -37,6 +39,7 @@ export function registerBuiltInTools(): void {
     projectScaffoldTool, diagramGenTool, testWriterTool, readmeGenTool,
     colorPaletteTool, regexBuilderTool, gitHelperTool, learningPlanTool,
     socialPostTool, jsonTransformerTool,
+    csvAnalyzerTool, meetingNotesTool,
   ];
   for (const tool of tools) toolRegistry.register(tool);
   console.log(`[Tools] Registered ${toolRegistry.getToolCount()} built-in tools`);
