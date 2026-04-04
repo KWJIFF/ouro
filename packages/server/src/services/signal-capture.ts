@@ -129,10 +129,9 @@ export async function captureSignal(input: UniversalSignalInput): Promise<Captur
     id,
     created_at: now(),
     modality,
-    raw_content: input.payload.text || null,
+    raw_content: input.payload.text || '',
     normalized_text: normalizedText,
-    media_url: mediaUrls[0] || null,
-    media_metadata: Object.keys(mediaMetadata).length > 0 ? mediaMetadata : null,
+    file_urls: mediaUrls,
     embedding,
     context: input.context,
     status: 'captured',
@@ -143,7 +142,7 @@ export async function captureSignal(input: UniversalSignalInput): Promise<Captur
     `INSERT INTO signals (id, created_at, modality, raw_content, normalized_text, media_url, media_metadata, embedding, context, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::vector, $9, $10)`,
     [signal.id, signal.created_at, signal.modality, signal.raw_content, signal.normalized_text,
-     signal.media_url, JSON.stringify(signal.media_metadata), embeddingStr, JSON.stringify(signal.context), signal.status]
+     mediaUrls[0] || null, JSON.stringify(mediaMetadata), embeddingStr, JSON.stringify(signal.context), signal.status]
   );
 
   return signal;
