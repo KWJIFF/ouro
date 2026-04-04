@@ -25,6 +25,7 @@ import { cacheRoutes } from './routes/cache';
 import { healthRoutes } from './routes/health';
 import { telemetryRoutes } from './routes/telemetry';
 import { replayRoutes } from './routes/replay';
+import { dataRoutes } from './routes/data';
 import { initShutdownHandler } from './services/shutdown';
 import { printEnvReport } from './services/env-validator';
 import { schedulerRoutes } from './routes/scheduler';
@@ -68,7 +69,8 @@ async function main() {
   await app.register(cacheRoutes);
   await app.register(healthRoutes);
   await app.register(telemetryRoutes);
-  await app.register(replayRoutes);            // Signal replay        // Telemetry dashboard           // Detailed health + rate limits            // Cache admin       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
+  await app.register(replayRoutes);
+  await app.register(dataRoutes);              // Data export/import            // Signal replay        // Telemetry dashboard           // Detailed health + rate limits            // Cache admin       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
