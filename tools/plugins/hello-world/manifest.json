@@ -1,0 +1,21 @@
+{
+  "id": "example/hello-world",
+  "version": "1.0.0",
+  "name": "Hello World",
+  "description": "A minimal example tool that demonstrates the Ouro plugin interface. Returns a greeting with the current timestamp.",
+  "capabilities": ["greeting", "example", "demo"],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string", "description": "Name to greet" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "greeting": { "type": "string" }
+    }
+  },
+  "author": "Ouro",
+  "tags": ["example", "demo"]
+}
