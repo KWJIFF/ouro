@@ -15,6 +15,11 @@ import { toolRoutes } from './routes/tools';
 import { observabilityRoutes } from './routes/observability';
 import { webhookRoutes } from './endpoints/webhook';
 import { promptRoutes } from './routes/prompts';
+import { analyticsRoutes } from './routes/analytics';
+import { eventRoutes } from './routes/events';
+import { configRoutes } from './routes/config';
+import { initConfigManager } from './services/config-manager';
+import { eventBus, wireEventBusToWebSocket } from './services/event-bus';
 import { initPromptManager } from './ai/prompts/prompt-manager';
 import { telegramRoutes } from './endpoints/telegram';
 import { emailRoutes } from './endpoints/email';
@@ -46,7 +51,10 @@ async function main() {
   await app.register(webhookRoutes);         // Generic webhook
   await app.register(telegramRoutes);        // Telegram bot
   await app.register(emailRoutes);
-  await app.register(promptRoutes);          // Prompt management           // Email inbound
+  await app.register(promptRoutes);
+  await app.register(analyticsRoutes);
+  await app.register(eventRoutes);           // Event stream
+  await app.register(configRoutes);          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
@@ -69,6 +77,8 @@ async function main() {
 
   registerBuiltInTools();
   await initPromptManager();
+  await initConfigManager();
+  wireEventBusToWebSocket();
   const httpServer = createServer(app.server);
   setupWebSocket(httpServer);
   await app.listen({ port: config.port, host: '0.0.0.0' });

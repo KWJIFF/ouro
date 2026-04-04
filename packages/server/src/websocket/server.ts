@@ -63,3 +63,7 @@ export function emitEvolutionOccurred(event: any): void {
 }
 
 export function getIO(): SocketIOServer | null { return io; }
+
+export function emitToAll(event: string, data: any): void {
+  if (io) io.emit(event, data);
+}
