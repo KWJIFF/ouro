@@ -15,33 +15,27 @@ import { sqlBuilderTool } from './sql-builder';
 import { mindMapTool } from './mind-map';
 import { summarizerTool } from './summarizer';
 import { debuggerTool } from './debugger';
+import { projectScaffoldTool } from './project-scaffold';
+import { diagramGenTool } from './diagram-gen';
+import { testWriterTool } from './test-writer';
+import { readmeGenTool } from './readme-gen';
+import { colorPaletteTool } from './color-palette';
+import { regexBuilderTool } from './regex-builder';
 import { scanLocalPlugins } from './plugin-loader';
 import * as path from 'path';
 
 export function registerBuiltInTools(): void {
-  // Core tools
-  toolRegistry.register(codeGenTool);
-  toolRegistry.register(webResearchTool);
-  toolRegistry.register(docWriterTool);
-  toolRegistry.register(imageGenTool);
-  toolRegistry.register(dataAnalyzerTool);
-  toolRegistry.register(fileManagerTool);
-
-  // Extended tools
-  toolRegistry.register(slideBuilderTool);
-  toolRegistry.register(apiBuilderTool);
-  toolRegistry.register(emailWriterTool);
-  toolRegistry.register(translatorTool);
-  toolRegistry.register(businessPlanTool);
-  toolRegistry.register(uiMockupTool);
-  toolRegistry.register(sqlBuilderTool);
-  toolRegistry.register(mindMapTool);
-  toolRegistry.register(summarizerTool);
-  toolRegistry.register(debuggerTool);
-
+  const tools = [
+    codeGenTool, webResearchTool, docWriterTool, imageGenTool,
+    dataAnalyzerTool, fileManagerTool, slideBuilderTool, apiBuilderTool,
+    emailWriterTool, translatorTool, businessPlanTool, uiMockupTool,
+    sqlBuilderTool, mindMapTool, summarizerTool, debuggerTool,
+    projectScaffoldTool, diagramGenTool, testWriterTool, readmeGenTool,
+    colorPaletteTool, regexBuilderTool,
+  ];
+  for (const tool of tools) toolRegistry.register(tool);
   console.log(`[Tools] Registered ${toolRegistry.getToolCount()} built-in tools`);
 
-  // Scan for local plugins
   const pluginDir = path.resolve(process.cwd(), 'tools/plugins');
   scanLocalPlugins(pluginDir).then(count => {
     if (count > 0) console.log(`[Tools] Loaded ${count} local plugins`);
