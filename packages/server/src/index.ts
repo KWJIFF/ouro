@@ -19,6 +19,10 @@ import { analyticsRoutes } from './routes/analytics';
 import { eventRoutes } from './routes/events';
 import { configRoutes } from './routes/config';
 import { initConfigManager } from './services/config-manager';
+import { initScheduler } from './services/scheduler';
+import { initShutdownHandler } from './services/shutdown';
+import { printEnvReport } from './services/env-validator';
+import { schedulerRoutes } from './routes/scheduler';
 import { eventBus, wireEventBusToWebSocket } from './services/event-bus';
 import { initPromptManager } from './ai/prompts/prompt-manager';
 import { telegramRoutes } from './endpoints/telegram';
@@ -54,7 +58,8 @@ async function main() {
   await app.register(promptRoutes);
   await app.register(analyticsRoutes);
   await app.register(eventRoutes);           // Event stream
-  await app.register(configRoutes);          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
+  await app.register(configRoutes);
+  await app.register(schedulerRoutes);       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
@@ -79,6 +84,9 @@ async function main() {
   await initPromptManager();
   await initConfigManager();
   wireEventBusToWebSocket();
+  printEnvReport();
+  initShutdownHandler();
+  initScheduler();
   const httpServer = createServer(app.server);
   setupWebSocket(httpServer);
   await app.listen({ port: config.port, host: '0.0.0.0' });
