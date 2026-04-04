@@ -2,17 +2,28 @@
 import { useState } from 'react';
 import SignalComposer from '@/components/signal-input/SignalComposer';
 import ExecutionStream from '@/components/execution/ExecutionStream';
+import LiveExecutionStream from '@/components/execution/LiveExecutionStream';
 import FeedbackBar from '@/components/feedback/FeedbackBar';
 import ArtifactRenderer from '@/components/artifact/ArtifactRenderer';
+import VersionTimeline from '@/components/artifact/VersionTimeline';
+import OfflineIndicator from '@/components/signal-input/OfflineIndicator';
 import { useSignalStore } from '@/stores/signal-store';
-import { Activity, GitBranch, Zap, Search, Wrench } from 'lucide-react';
+import { Activity, GitBranch, Zap, Wrench, BarChart3 } from 'lucide-react';
 
 export default function Home() {
   const [result, setResult] = useState<any>(null);
+  const [liveSignalId, setLiveSignalId] = useState<string | null>(null);
   const { signals } = useSignalStore();
+
+  const handleResult = (r: any) => {
+    setResult(r);
+    setLiveSignalId(r.signal_id);
+  };
 
   return (
     <main className="min-h-screen flex flex-col">
+      <OfflineIndicator />
+
       <header className="flex items-center justify-between px-6 py-4 border-b border-ouro-border/50">
         <div className="flex items-center gap-3">
           <span className="text-xl">🐍</span>
@@ -21,12 +32,10 @@ export default function Home() {
         </div>
         <nav className="flex items-center gap-4">
           <NavLink href="/history" icon={<Zap size={16} />} label="Signals" />
-          <NavLink href="/history" icon={<GitBranch size={16} />} label="Graph" />
           <NavLink href="/evolution" icon={<Activity size={16} />} label="Evolution" />
-          <NavLink href="/analytics" icon={<Activity size={16} />} label="Analytics" />
+          <NavLink href="/analytics" icon={<BarChart3 size={16} />} label="Analytics" />
           <NavLink href="/settings" icon={<Wrench size={16} />} label="Settings" />
-        <NavLink href="/analytics" icon={<Activity size={16} />} label="Analytics" />
-          <NavLink href="/settings" icon={<Wrench size={16} />} label="Settings" /></nav>
+        </nav>
       </header>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
@@ -40,7 +49,7 @@ export default function Home() {
           </div>
         )}
 
-        {signals.length > 0 && (
+        {signals.length > 0 && !result && (
           <div className="w-full max-w-2xl mb-8">
             <div className="flex items-center gap-2 mb-3 px-1">
               <Zap size={14} className="text-ouro-accent" />
@@ -56,8 +65,12 @@ export default function Home() {
           </div>
         )}
 
-        <SignalComposer onResult={setResult} />
+        <SignalComposer onResult={handleResult} />
 
+        {/* Live execution stream (WebSocket) */}
+        <LiveExecutionStream signalId={liveSignalId} />
+
+        {/* Results */}
         {result && (
           <div className="w-full max-w-2xl mt-6 space-y-4 animate-slide-up">
             <ExecutionStream result={result} />
@@ -65,6 +78,7 @@ export default function Home() {
             {result.artifacts?.map((artifact: any, i: number) => (
               <div key={i} className="space-y-3">
                 <ArtifactRenderer artifact={artifact} />
+                <VersionTimeline artifactId={artifact.id || `art-${i}`} />
                 <FeedbackBar artifactId={artifact.id || `art-${i}`} signalId={result.signal_id} />
               </div>
             ))}
