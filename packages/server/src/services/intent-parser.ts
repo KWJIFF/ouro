@@ -1,7 +1,7 @@
 import { generateId } from '@ouro/core';
 import type { CapturedSignal, ParsedIntent, IntentType } from '@ouro/core';
 import { callAI } from '../ai/llm-client';
-import { INTENT_PARSE_SYSTEM, buildIntentParsePrompt } from '../ai/prompts/intent-parse';
+import { buildIntentPrompt } from '../ai/prompts/intent-parse';
 import { query, getOne } from '../db/client';
 import { config } from '../config';
 import { getRecentSignals } from './signal-capture';
@@ -15,7 +15,8 @@ export async function parseIntent(signal: CapturedSignal): Promise<ParsedIntent>
 
   const personalModel = await getPersonalModel();
 
-  const userPrompt = buildIntentParsePrompt(
+  // Build prompt using the prompt library
+  const { system, user } = buildIntentPrompt(
     signal.normalized_text,
     signal.modality,
     recentTexts,
@@ -23,8 +24,8 @@ export async function parseIntent(signal: CapturedSignal): Promise<ParsedIntent>
   );
 
   const response = await callAI([
-    { role: 'system', content: INTENT_PARSE_SYSTEM },
-    { role: 'user', content: userPrompt },
+    { role: 'system', content: system },
+    { role: 'user', content: user },
   ], { temperature: 0.3 });
 
   let parsed: any;
@@ -32,7 +33,6 @@ export async function parseIntent(signal: CapturedSignal): Promise<ParsedIntent>
     const clean = response.content.replace(/```json|```/g, '').trim();
     parsed = JSON.parse(clean);
   } catch {
-    // If AI response isn't valid JSON, default to capture intent
     parsed = {
       intent_type: 'capture',
       confidence: 0.5,
@@ -56,7 +56,8 @@ export async function parseIntent(signal: CapturedSignal): Promise<ParsedIntent>
   await query(
     `INSERT INTO intents (id, signal_id, created_at, intent_type, confidence, description, parameters, clarification_asked)
      VALUES ($1, $2, NOW(), $3, $4, $5, $6, $7)`,
-    [intent.id, intent.signal_id, intent.intent_type, intent.confidence, intent.description, JSON.stringify(intent.parameters), intent.needs_clarification]
+    [intent.id, intent.signal_id, intent.intent_type, intent.confidence,
+     intent.description, JSON.stringify(intent.parameters), intent.needs_clarification]
   );
 
   return intent;

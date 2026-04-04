@@ -1,38 +1,75 @@
-export const PLAN_GENERATE_SYSTEM = `You are the execution planner for Ouro.
-Given an intent, generate an optimal execution plan as a DAG of tool invocations.
-You have full knowledge of all available tools and their capabilities.
+/**
+ * Execution Plan Generation Prompt
+ * 
+ * This prompt tells the AI how to decompose an intent into a sequence
+ * of tool invocations. It must:
+ * 1. Know all available tools and their capabilities
+ * 2. Choose the optimal tool(s) for the task
+ * 3. Identify parallelizable steps
+ * 4. Estimate resource consumption
+ */
 
-Rules:
-1. Minimize steps — prefer fewer, more capable tools
-2. Maximize parallelism — independent steps must not depend on each other
-3. Each step needs a fallback approach
-4. Estimate tokens and duration per step
+export const PLAN_GENERATE_SYSTEM_PROMPT = `You are the execution planner for Ouro. Given a parsed intent, generate an optimal execution plan.
 
-Available tools:
-- code_generation: Generate code in any language, scaffold projects, build APIs
-- web_research: Search the web, synthesize information from multiple sources
-- doc_writer: Write documents, articles, reports in markdown
-- image_generation: Generate images from text descriptions
-- data_analyzer: Analyze data, create visualizations, compute statistics
-- file_manager: Create, organize, transform files
+## Available Tools
 
-Respond with JSON only, no markdown fences:
+{tool_list}
+
+## Planning Rules
+
+1. Choose the MINIMUM number of tools needed. One tool is usually enough.
+2. If multiple tools are needed, identify which can run in PARALLEL (no dependencies between them).
+3. Each step must specify: tool ID, input parameters, and dependencies (which previous steps must complete first).
+4. Prefer tools whose capabilities EXACTLY match the task over tools with broad capabilities.
+5. If no tool matches well, choose the closest match — the system NEVER refuses.
+
+## Output Format
+
+JSON only (no markdown fences):
 {
   "steps": [
     {
       "id": "s1",
-      "tool": "tool_name",
-      "input": { "prompt": "...", "options": {} },
+      "tool": "tool_id",
+      "input": { "prompt": "..." },
       "deps": [],
-      "fallback": { "tool": "alt_tool", "input": {} },
-      "est_tokens": 2000,
+      "est_tokens": 3000,
       "est_duration_ms": 5000
     }
   ],
-  "estimated_total_duration_ms": 15000,
-  "estimated_total_tokens": 8000
-}`;
+  "estimated_total_duration_ms": 5000,
+  "estimated_total_tokens": 3000
+}
 
-export function buildPlanPrompt(intentDescription: string, parameters: Record<string, any>): string {
-  return `Intent: ${intentDescription}\nParameters: ${JSON.stringify(parameters)}\n\nGenerate the execution plan.`;
+## Cached Paths (proven successful for similar intents)
+
+{cached_paths}
+
+## Intent to Plan`;
+
+export function buildPlanPrompt(
+  intent: { type: string; description: string; parameters: any },
+  toolManifests: Array<{ id: string; name: string; description: string; capabilities: string[] }>,
+  cachedPaths?: Record<string, any>,
+): { system: string; user: string } {
+  const toolList = toolManifests.map(t =>
+    `- **${t.id}** (${t.name}): ${t.description}\n  Capabilities: ${t.capabilities.join(', ')}`
+  ).join('\n');
+
+  let cachedBlock = 'None cached yet.';
+  if (cachedPaths && Object.keys(cachedPaths).length > 0) {
+    cachedBlock = Object.entries(cachedPaths)
+      .map(([key, val]: any) => `  ${key}: used tool ${val.dag?.steps?.[0]?.tool || '?'} (satisfaction: ${val.satisfaction?.toFixed(2) || '?'})`)
+      .join('\n');
+  }
+
+  const system = PLAN_GENERATE_SYSTEM_PROMPT
+    .replace('{tool_list}', toolList)
+    .replace('{cached_paths}', cachedBlock);
+
+  const user = `Intent type: ${intent.type}
+Description: ${intent.description}
+Parameters: ${JSON.stringify(intent.parameters)}`;
+
+  return { system, user };
 }
