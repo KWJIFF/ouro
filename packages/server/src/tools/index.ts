@@ -31,6 +31,10 @@ import { codeReviewTool } from './code-review';
 import { changelogGenTool } from './changelog-gen';
 import { contractWriterTool } from './contract-writer';
 import { interviewPrepTool } from './interview-prep';
+import { presentationOutlineTool } from './presentation-outline';
+import { competitorAnalysisTool } from './competitor-analysis';
+import { userStoryWriterTool } from './user-story';
+import { seoOptimizerTool } from './seo-optimizer';
 import { scanLocalPlugins } from './plugin-loader';
 import * as path from 'path';
 
@@ -45,6 +49,7 @@ export function registerBuiltInTools(): void {
     socialPostTool, jsonTransformerTool,
     csvAnalyzerTool, meetingNotesTool,
     codeReviewTool, changelogGenTool, contractWriterTool, interviewPrepTool,
+    presentationOutlineTool, competitorAnalysisTool, userStoryWriterTool, seoOptimizerTool,
   ];
   for (const tool of tools) toolRegistry.register(tool);
   console.log(`[Tools] Registered ${toolRegistry.getToolCount()} built-in tools`);
