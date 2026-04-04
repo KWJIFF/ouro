@@ -21,6 +21,10 @@ import { testWriterTool } from './test-writer';
 import { readmeGenTool } from './readme-gen';
 import { colorPaletteTool } from './color-palette';
 import { regexBuilderTool } from './regex-builder';
+import { gitHelperTool } from './git-helper';
+import { learningPlanTool } from './learning-plan';
+import { socialPostTool } from './social-post';
+import { jsonTransformerTool } from './json-transformer';
 import { scanLocalPlugins } from './plugin-loader';
 import * as path from 'path';
 
@@ -31,7 +35,8 @@ export function registerBuiltInTools(): void {
     emailWriterTool, translatorTool, businessPlanTool, uiMockupTool,
     sqlBuilderTool, mindMapTool, summarizerTool, debuggerTool,
     projectScaffoldTool, diagramGenTool, testWriterTool, readmeGenTool,
-    colorPaletteTool, regexBuilderTool,
+    colorPaletteTool, regexBuilderTool, gitHelperTool, learningPlanTool,
+    socialPostTool, jsonTransformerTool,
   ];
   for (const tool of tools) toolRegistry.register(tool);
   console.log(`[Tools] Registered ${toolRegistry.getToolCount()} built-in tools`);
