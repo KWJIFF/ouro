@@ -1,190 +1,218 @@
 /**
- * Ouro Service Worker — Offline Signal Capture
+ * Ouro Service Worker — Offline-first PWA support.
  * 
- * Constitutional Principle #1: Zero Friction
- * Signals must be capturable even without internet.
- * They queue locally and sync when connectivity returns.
+ * Strategies:
+ * - Cache-first for static assets (JS, CSS, images)
+ * - Network-first for API calls (fall back to cache)
+ * - Queue signals when offline, sync when back online
  */
 
 const CACHE_NAME = 'ouro-v1';
-const OFFLINE_QUEUE_KEY = 'ouro-offline-signals';
-const API_URL = self.location.origin.replace(':3000', ':3001');
-
-// Cache the app shell
-const APP_SHELL = [
+const STATIC_ASSETS = [
   '/',
   '/history',
   '/evolution',
+  '/analytics',
+  '/settings',
 ];
 
+const SIGNAL_QUEUE_KEY = 'ouro-offline-signals';
+
+// Install: pre-cache static assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(STATIC_ASSETS).catch(() => {
+        // Non-critical: pages might not all be built yet
+      });
+    })
   );
   self.skipWaiting();
 });
 
+// Activate: clean old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(names =>
-      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
-    )
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+    })
   );
   self.clients.claim();
 });
 
-// Intercept fetch requests
+// Fetch: routing strategy
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // API signal submission — queue if offline
-  if (url.pathname === '/api/signals' && event.request.method === 'POST') {
-    event.respondWith(handleSignalSubmission(event.request));
-    return;
-  }
+  // API calls: network-first
+  if (url.pathname.startsWith('/api/')) {
+    // Signal submission when offline → queue
+    if (url.pathname === '/api/signals' && event.request.method === 'POST') {
+      event.respondWith(
+        fetch(event.request.clone()).catch(async () => {
+          // Offline: queue the signal
+          const body = await event.request.clone().json();
+          await queueSignal(body);
 
-  // App navigation — serve from cache, fallback to network
-  if (event.request.mode === 'navigate') {
+          return new Response(JSON.stringify({
+            success: true,
+            queued: true,
+            message: 'Signal queued for offline sync',
+          }), {
+            headers: { 'Content-Type': 'application/json' },
+          });
+        })
+      );
+      return;
+    }
+
+    // Other API calls: network-first with cache fallback
     event.respondWith(
-      caches.match(event.request).then(cached => cached || fetch(event.request))
+      fetch(event.request).then((response) => {
+        if (response.ok && event.request.method === 'GET') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone);
+          });
+        }
+        return response;
+      }).catch(() => {
+        return caches.match(event.request).then((cached) => {
+          return cached || new Response(JSON.stringify({ success: false, error: { code: 'OFFLINE', message: 'You are offline' } }), {
+            headers: { 'Content-Type': 'application/json' },
+          });
+        });
+      })
     );
     return;
   }
 
-  // Everything else — network first, cache fallback
+  // Static assets: cache-first
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+
+      return fetch(event.request).then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone);
+          });
         }
         return response;
-      })
-      .catch(() => caches.match(event.request))
+      });
+    })
   );
 });
 
-async function handleSignalSubmission(request) {
-  try {
-    // Try to submit online
-    const response = await fetch(request.clone());
-    if (response.ok) {
-      // Successfully submitted — also try to flush any queued signals
-      flushOfflineQueue();
-      return response;
-    }
-    throw new Error('Server error');
-  } catch (error) {
-    // Offline — queue the signal
-    const body = await request.clone().text();
-    await queueSignal(body);
+// Background sync: flush queued signals
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-signals') {
+    event.waitUntil(flushSignalQueue());
+  }
+});
 
-    return new Response(JSON.stringify({
-      signal_id: 'offline-' + Date.now(),
-      status: 'queued',
-      message: 'Signal saved offline. Will sync when connected.',
-    }), {
-      status: 202,
-      headers: { 'Content-Type': 'application/json' },
+// Message handler
+self.addEventListener('message', (event) => {
+  if (event.data === 'flush-queue') {
+    flushSignalQueue().then(() => {
+      event.source?.postMessage({ type: 'queue-flushed' });
     });
   }
-}
+  if (event.data === 'get-queue-count') {
+    getQueueCount().then((count) => {
+      event.source?.postMessage({ type: 'queue-count', count });
+    });
+  }
+});
 
-async function queueSignal(body) {
-  const db = await openDB();
-  const tx = db.transaction('signals', 'readwrite');
-  const store = tx.objectStore('signals');
-  await store.add({
-    id: Date.now(),
-    body,
-    timestamp: new Date().toISOString(),
-    status: 'queued',
-    retryCount: 0,
+// === Signal Queue (IndexedDB) ===
+async function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('ouro-offline', 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('signals')) {
+        db.createObjectStore('signals', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 }
 
-async function flushOfflineQueue() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction('signals', 'readonly');
-    const store = tx.objectStore('signals');
-    const all = await storeGetAll(store);
+async function queueSignal(signalData) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('signals', 'readwrite');
+    tx.objectStore('signals').add({
+      ...signalData,
+      queued_at: new Date().toISOString(),
+    });
+    tx.oncomplete = () => {
+      // Notify client
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'signal-queued' });
+        });
+      });
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
 
-    for (const signal of all) {
-      if (signal.status === 'queued') {
+async function flushSignalQueue() {
+  const db = await openDB();
+  const tx = db.transaction('signals', 'readonly');
+  const store = tx.objectStore('signals');
+
+  return new Promise((resolve) => {
+    const request = store.getAll();
+    request.onsuccess = async () => {
+      const signals = request.result;
+      let synced = 0;
+
+      for (const signal of signals) {
         try {
-          const response = await fetch(`${API_URL}/api/signals`, {
+          const response = await fetch('/api/signals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: signal.body,
+            body: JSON.stringify(signal),
           });
 
           if (response.ok) {
+            // Remove from queue
             const deleteTx = db.transaction('signals', 'readwrite');
             deleteTx.objectStore('signals').delete(signal.id);
+            synced++;
 
-            // Notify clients
-            self.clients.matchAll().then(clients => {
-              clients.forEach(client => {
-                client.postMessage({
-                  type: 'signal-synced',
-                  signalId: signal.id,
-                  timestamp: signal.timestamp,
-                });
+            // Notify client
+            self.clients.matchAll().then((clients) => {
+              clients.forEach((client) => {
+                client.postMessage({ type: 'signal-synced', signal_id: signal.id });
               });
             });
           }
         } catch {
-          // Still offline, try again later
+          // Still offline, stop trying
+          break;
         }
       }
-    }
-  } catch (e) {
-    console.error('[SW] Queue flush failed:', e);
-  }
-}
 
-// IndexedDB wrapper
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ouro-offline', 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('signals')) {
-        db.createObjectStore('signals', { keyPath: 'id' });
-      }
+      resolve(synced);
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
   });
 }
 
-function storeGetAll(store) {
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+async function getQueueCount() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('signals', 'readonly');
+    const request = tx.objectStore('signals').count();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(0);
   });
 }
-
-// Periodic sync (when browser supports it)
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'sync-signals') {
-    event.waitUntil(flushOfflineQueue());
-  }
-});
-
-// Manual sync trigger
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-signals') {
-    event.waitUntil(flushOfflineQueue());
-  }
-});
-
-// Listen for online events
-self.addEventListener('message', (event) => {
-  if (event.data === 'flush-queue') {
-    flushOfflineQueue();
-  }
-});
