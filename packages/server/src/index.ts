@@ -14,6 +14,8 @@ import { graphRoutes } from './routes/graph';
 import { toolRoutes } from './routes/tools';
 import { observabilityRoutes } from './routes/observability';
 import { webhookRoutes } from './endpoints/webhook';
+import { promptRoutes } from './routes/prompts';
+import { initPromptManager } from './ai/prompts/prompt-manager';
 import { telegramRoutes } from './endpoints/telegram';
 import { emailRoutes } from './endpoints/email';
 import { setupWebSocket } from './websocket/server';
@@ -43,7 +45,8 @@ async function main() {
   // === Endpoint Adapters ===
   await app.register(webhookRoutes);         // Generic webhook
   await app.register(telegramRoutes);        // Telegram bot
-  await app.register(emailRoutes);           // Email inbound
+  await app.register(emailRoutes);
+  await app.register(promptRoutes);          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
@@ -65,6 +68,7 @@ async function main() {
   });
 
   registerBuiltInTools();
+  await initPromptManager();
   const httpServer = createServer(app.server);
   setupWebSocket(httpServer);
   await app.listen({ port: config.port, host: '0.0.0.0' });
