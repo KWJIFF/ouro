@@ -498,181 +498,127 @@ If the answer to (2) is "no," the code is too coupled. Refactor until it is.
 
 ## IX. What Has Been Built
 
-Ouro is not a design document. It is a running system. Every layer described above has been implemented, tested, and verified end-to-end.
-
-### Verification Results
-
-The complete 7-layer pipeline has been verified with real PostgreSQL + pgvector:
+### Verification Results (Real PostgreSQL, E2E)
 
 ```
-Signal 1: "Build a landing page for my coffee shop"
-  L1 Capture:   ✅ text | 01KNB0SEP659
-  L2 Intent:    ✅ create (85%)
-  L3 Plan:      ✅ 1 step → [code_generation]
-  L3 Execute:   ✅ completed (1/1 steps)
-  L4 Artifacts: ✅ 1 artifact (document v1)
-  L5 Recovery:  ✅ 10 patterns extracted
-  L4 Feedback:  ✅ accept (satisfaction: 1.00)
+✅ [create]  "Build a landing page"  → ui_mockup    | 1 artifact | 10 patterns
+✅ [explore] "Research AI trends"    → web_research  | 1 artifact | 9 patterns  
+✅ [capture] "Remember: meeting"     → file_manager  | 1 artifact | 9 patterns
+✅ [create]  "Color palette"         → code_gen      | 1 artifact | 9 patterns
+✅ [create]  "Business plan"         → doc_writer    | 1 artifact | 9 patterns
 
-Signal 2: "Research AI trends for 2025"
-  L2 Intent:    ✅ explore (85%)
-  L3 Plan:      ✅ [web_research]
-  L3 Execute:   ✅ completed
-
-Signal 3: "Remember: investor meeting at 3pm"
-  L2 Intent:    ✅ capture (92%)
-  L3 Plan:      ✅ [file_manager]
-
-L5 Search:     ✅ Semantic search operational (10 results)
-L5 Graph:      ✅ 12 nodes, 7 edges auto-connected
-L6 Evolution:  ✅ 3 events (tool weights + path cache + personal model)
-L6 Model:      ✅ domains, modalities, confidence built
-
-Database: 12 signals | 6 artifacts | 92 patterns | 7 connections
+Evolution: 3 events | Model confidence: 23%
+DB: 28 signals | 16 artifacts | 189 patterns | 24 connections
 ```
 
-### Backend: 19 Service Modules
+### Backend: 25 Service Modules
 
-| Service | Layer | Function |
+| Module | Layer | Function |
 |---|---|---|
-| `signal-capture` | L1 | Multi-modal ingestion (text/voice/image/video/sketch/file) with parallel processing |
-| `intent-parser` | L2 | AI intent classification with confidence scoring + clarification protocol |
-| `execution-planner` | L3 | Parallel DAG generation from parsed intent |
-| `execution-runner` | L3 | DAG execution with step-level parallelism, fallback, WebSocket streaming |
-| `artifact-builder` | L4 | Artifact construction with versioning, deduplication, embedding |
-| `feedback-processor` | L4 | Feedback recording with behavioral satisfaction inference |
-| `pattern-extractor` | L5 | Five-category deep pattern extraction from every cycle |
-| `idea-graph` | L5 | BFS graph traversal + auto-connection via embedding similarity |
-| `semantic-search` | L5 | pgvector cosine similarity across signals and artifacts |
-| `personal-model` | L6 | Domain preferences, temporal profile, expression habits, quality preferences |
-| `evolution-engine` | L6 | 5-step cycle + meta-evolution + prompt refinement + phase detection |
-| `event-bus` | All | Typed event system (20+ event types) + rate tracking + SSE stream |
-| `config-manager` | All | 23 runtime-configurable parameters with full change audit |
-| `prompt-manager` | L2/L3 | Version-controlled prompt templates with rollback |
+| `signal-capture` | L1 | Multi-modal ingestion (text/voice/image/video/sketch/file) |
+| `intent-parser` | L2 | AI classification with confidence + clarification |
+| `execution-planner` | L3 | DAG generation with 32-tool heuristic fallback |
+| `execution-runner` | L3 | Parallel execution with WebSocket streaming |
+| `execution-guard` | L3 | Timeout, retry, circuit breaker |
+| `artifact-builder` | L4 | Versioning, deduplication, embedding |
+| `feedback-processor` | L4 | Behavioral satisfaction inference |
+| `pattern-extractor` | L5 | Five-category deep extraction |
+| `idea-graph` | L5 | BFS traversal + auto-connection |
+| `semantic-search` | L5 | pgvector cosine similarity |
+| `personal-model` | L6 | Domain/temporal/expression/quality profiles |
+| `evolution-engine` | L6 | 5-step cycle + meta-evolution + phase detection |
+| `event-bus` | All | 20+ typed events + SSE stream |
+| `config-manager` | All | 23 params, change audit, runtime updates |
+| `prompt-manager` | L2/L3 | Version-controlled templates with rollback |
 | `analytics` | All | Full-spectrum metrics across all layers |
-| `scheduler` | All | Periodic tasks (evolution check, model rebuild, health ping) |
-| `shutdown` | All | Graceful shutdown with state preservation |
-| `env-validator` | All | Startup configuration validation + reporting |
-| `mock-provider` | L2/L3 | Development AI provider — system runs without API key |
+| `cache` | All | L1 memory + L2 Redis with domain TTLs |
+| `scheduler` | All | Periodic tasks (evolution, model, health) |
+| `health-monitor` | All | 6 health checks (DB, Redis, memory, disk, events, tools) |
+| `shutdown` | All | Graceful with state preservation |
+| `env-validator` | All | Startup validation + reporting |
+| `mock-provider` | AI | Dev provider (runs without API key) |
+| `i18n` | All | 10 languages with auto-detection |
+| `pipeline-hooks` | All | 14 hook phases for plugin extensibility |
+| `rate-limiter` | All | Per-user sliding window (7 endpoint types) |
 
-### 26 Built-in Tools
+### 32 Built-in Tools
 
 | Category | Tools |
 |---|---|
-| **Code** | `code_generation`, `api_builder`, `project_scaffold`, `debugger`, `test_writer`, `regex_builder`, `git_helper` |
-| **Writing** | `doc_writer`, `email_writer`, `readme_generator`, `summarizer`, `social_post` |
-| **Design** | `image_generation`, `ui_mockup`, `color_palette`, `diagram_generator`, `mind_map` |
-| **Data** | `data_analyzer`, `sql_builder`, `json_transformer` |
-| **Strategy** | `business_plan`, `learning_plan`, `web_research` |
-| **System** | `file_manager`, `translator`, `slide_builder` |
+| **Code** (8) | `code_generation` `api_builder` `project_scaffold` `debugger` `test_writer` `regex_builder` `git_helper` `code_review` |
+| **Writing** (7) | `doc_writer` `email_writer` `readme_generator` `summarizer` `social_post` `changelog_generator` `contract_writer` |
+| **Design** (5) | `image_generation` `ui_mockup` `color_palette` `diagram_generator` `mind_map` |
+| **Data** (4) | `data_analyzer` `sql_builder` `json_transformer` `csv_analyzer` |
+| **Strategy** (4) | `business_plan` `learning_plan` `web_research` `interview_prep` |
+| **Productivity** (4) | `file_manager` `translator` `slide_builder` `meeting_notes` |
 
-Plus a **plugin system** with 6 registration methods (local directory, npm, Docker, remote URL/MCP, inline function, AI auto-generation). See `tools/plugins/hello-world/` for a reference implementation.
+### Test Suite: 234 Tests (11 Files)
 
-### 52 API Route Handlers
-
-| Category | Key Endpoints |
-|---|---|
-| **Signals** | `POST /api/signals` · `GET /api/signals` · `GET /api/signals/:id` · `POST /api/signals/:id/clarify` · `GET /api/signals/:id/similar` |
-| **Feedback** | `POST /api/feedback` · `GET /api/feedback/artifact/:id` · `GET /api/feedback/signal/:id/summary` |
-| **Artifacts** | `GET /api/artifacts/:id` · `GET /api/artifacts/:id/versions` |
-| **Search** | `GET /api/search?q=...` · `GET /api/search/artifacts?q=...` |
-| **Graph** | `GET /api/graph` · `POST /api/connections` |
-| **Evolution** | `GET /api/evolution/stats` · `GET /api/evolution/log` · `POST /api/evolution/trigger` |
-| **Analytics** | `GET /api/analytics` · `GET /api/analytics/signals` · `GET /api/analytics/evolution` |
-| **Tools** | `GET /api/tools` · `POST /api/tools/register` · `POST /api/tools/generate` |
-| **Config** | `GET /api/config` · `PUT /api/config/:key` · `GET /api/config/changelog` |
-| **Prompts** | `GET /api/prompts/:name` · `POST /api/prompts/:name` · `POST /api/prompts/:name/activate/:version` |
-| **Events** | `GET /api/events` · `GET /api/events/stream` (SSE) · `GET /api/events/rate` |
-| **Endpoints** | `POST /api/webhook/:source` · `POST /api/telegram/webhook` · `POST /api/email/inbound` |
-| **Admin** | `GET /api/admin/stats` · `GET /api/admin/logs` · `GET /api/admin/scheduler` |
-| **System** | `GET /api/health` · `GET /api/system` |
-
-### Frontend: 6 Pages, 8 Components
-
-| Page | Route | Features |
+| File | Tests | Coverage |
 |---|---|---|
-| **Main** | `/` | Signal composer (text/voice/camera/sketch/file), execution stream, artifact viewer, feedback bar |
-| **History** | `/history` | Three tabs: signal timeline, idea graph (SVG), semantic search |
-| **Evolution** | `/evolution` | Phase display, metrics, personal model, tool registry, evolution event log, manual trigger |
-| **Analytics** | `/analytics` | Signal heatmap by hour, intent distribution bars, tool performance, feedback rates, pattern insights, modality breakdown, evolution impact |
-| **Settings** | `/settings` | Four tabs: general (system state + constitutional principles), tools (register/generate), endpoints (status), AI providers (chain + prompts) |
-| **Signal Detail** | `/signal/[id]` | Full signal view with intent, artifacts, feedback bar, similar signals |
+| `signal-capture` | 8 | Modality detection, text extraction |
+| `intent-parser` | 30 | Classification, confidence, parameters |
+| `pipeline-integration` | 22 | DAG, tool mapping, dedup, feedback |
+| `event-config` | 15 | Event bus, config, analytics |
+| `e2e-pipeline` | 30 | Full simulation, sessions, chains |
+| `services` | 40 | Artifact, graph, scheduler, prompts |
+| `i18n` | 15 | Language detection, translations |
+| `cache` | 8 | L1/L2, keys, TTL, promotion |
+| `tools` | 36 | Registry, capabilities, contracts |
+| `execution-guard` | 10 | Timeout, retry, circuit breaker |
+| `health-hooks` | 20 | Hooks, rate limits, health checks |
 
-Components: `SignalComposer` · `ExecutionStream` · `ArtifactRenderer` · `FeedbackBar` · `SketchPad` · `IdeaGraph` · plus page-specific components.
+### Frontend: 6 Pages, 11+ Components
+
+| Page | Features |
+|---|---|
+| `/` | Signal composer (6 modalities), live execution stream, artifact viewer, feedback, offline indicator |
+| `/history` | Timeline + idea graph (SVG) + semantic search |
+| `/evolution` | Phase, metrics, personal model, tool registry, events |
+| `/analytics` | Heatmap, intent bars, tool performance, feedback rates, patterns |
+| `/settings` | General / Tools / Endpoints / AI providers |
+| `/signal/[id]` | Detail + intent + artifacts + similar signals |
 
 ### Infrastructure
 
-| Component | Implementation |
+| Component | Status |
 |---|---|
-| **PWA** | Service Worker with IndexedDB offline signal queue, auto-sync on reconnect |
-| **WebSocket** | Socket.IO with per-signal rooms, all execution events streamed |
-| **Database** | PostgreSQL 16 + pgvector (9 tables + prompt_templates + ouro_config + config_changelog + _migrations) |
-| **Storage** | S3-compatible (MinIO) for media and artifact files |
-| **CI/CD** | GitHub Actions: typecheck + test + build |
-| **CLI** | `ouro "signal"` · `ouro signals` · `ouro search` · `ouro evolution` · `ouro tools` · `ouro file` |
-| **Docker** | Docker Compose: web + server + postgres + redis + minio |
-| **Testing** | Vitest: 6 test files, 145 tests, all passing |
-
-### Test Coverage (145 tests)
-
-| Test File | Tests | Coverage |
-|---|---|---|
-| `signal-capture.test.ts` | 8 | Modality detection, text extraction, context building |
-| `intent-parser.test.ts` | 30 | Intent classification (13 cases), confidence, parameters, tool mapping, DAG validation |
-| `pipeline-integration.test.ts` | 22 | DAG computation, tool selection, artifact dedup, feedback bounds, phase transitions |
-| `event-config.test.ts` | 15 | Event bus, config manager, analytics trends, tool manifest validation |
-| `e2e-pipeline.test.ts` | 30 | Full pipeline simulation, multi-signal sessions, chain tracking, evolution cycles |
-| `services.test.ts` | 40 | Artifact builder, idea graph, scheduler, env validator, prompt templates, mock provider accuracy, domain detection |
+| PWA + Service Worker | ✅ Offline signal queue with auto-sync |
+| WebSocket | ✅ Real-time execution streaming |
+| PostgreSQL + pgvector | ✅ 12+ tables, vector search |
+| Docker Compose | ✅ 5 services with health checks |
+| GitHub Actions CI | ✅ Typecheck + test + build |
+| CLI | ✅ `ouro "signal"`, search, evolution, tools |
+| Electron Desktop | ✅ Scaffold (global hotkey, tray, quick input) |
+| i18n | ✅ 10 languages with auto-detection |
 
 ---
 
 ## X. Running Ouro
 
-### Prerequisites
-
-- Docker and Docker Compose
-- An Anthropic API key (optional — system runs with mock AI without it)
-
-### Start
-
 ```bash
+# Clone and start
 git clone https://github.com/KWJIFF/ouro.git
 cd ouro
-cp .env.example .env    # Set ANTHROPIC_API_KEY for real AI capabilities
+cp .env.example .env
 docker compose up -d
 open http://localhost:3000
-```
 
-### Development Mode
-
-```bash
+# Development
 npm install
 docker compose up postgres redis minio -d
-cd packages/server && npm run dev   # Terminal 1
-cd packages/web && npm run dev      # Terminal 2
-```
+cd packages/server && npm run dev
+cd packages/web && npm run dev
 
-### CLI
+# Tests
+cd packages/server && npm test
 
-```bash
+# CLI
 cd packages/cli && npx tsx src/index.ts "Build me a landing page"
-cd packages/cli && npx tsx src/index.ts signals
-cd packages/cli && npx tsx src/index.ts search "coffee shop"
-cd packages/cli && npx tsx src/index.ts evolution
-cd packages/cli && npx tsx src/index.ts tools
+
+# Seed development data
+cd packages/server && npm run seed
 ```
-
-### Running Tests
-
-```bash
-cd packages/server
-npm run test          # Run once
-npm run test:watch    # Watch mode
-```
-
-### First Interaction
-
-Type anything into the signal field. A sentence, a question, a request. Watch the system parse your intent, plan execution, run tools, and produce an artifact. Then modify it, accept it, or reject it. The meme just fed for the first time.
 
 ---
 
@@ -681,40 +627,15 @@ Type anything into the signal field. A sentence, a question, a request. Watch th
 ```
 ouro/
 ├── packages/
-│   ├── core/                    # 8 contracts + types + utils
-│   │   └── src/types/
-│   │       └── contracts.ts     # THE 8 INTERFACES
-│   ├── server/                  # Backend (Fastify + BullMQ + PostgreSQL)
-│   │   └── src/
-│   │       ├── services/        # 19 service modules (one per layer function)
-│   │       ├── routes/          # 10 route files (52 handlers)
-│   │       ├── endpoints/       # 3 adapters (webhook, telegram, email)
-│   │       ├── tools/           # 26 tools + registry + plugin loader
-│   │       ├── ai/              # LLM client + vision + STT + mock + prompts
-│   │       ├── middleware/      # Auth, rate limit, logger, errors, validation
-│   │       ├── db/              # Client + migrations + migrator
-│   │       └── websocket/       # Socket.IO real-time events
-│   ├── web/                     # Frontend (Next.js + Tailwind)
-│   │   └── src/
-│   │       ├── app/             # 6 pages
-│   │       ├── components/      # 8 components
-│   │       ├── hooks/           # WebSocket + media capture
-│   │       ├── stores/          # Zustand state
-│   │       └── lib/             # API client (all 52 endpoints)
-│   └── cli/                     # Command-line interface
-├── tools/
-│   ├── plugins/hello-world/     # Example plugin
-│   └── healthcheck.sh           # Docker health check
-├── docs/
-│   ├── SYSTEM_BLUEPRINT.md      # Complete technical design
-│   ├── CONSTITUTIONAL_ADDENDUM.md
-│   ├── architecture.md
-│   ├── tool-development.md
-│   └── openapi.yaml             # OpenAPI 3.0.3 specification
-├── .github/workflows/ci.yml    # GitHub Actions CI
-├── docker-compose.yml
-├── CONTRIBUTING.md
-└── README.md                    # You are here
+│   ├── core/           # 8 contracts + types + utils
+│   ├── server/         # 25 services, 32 tools, 52+ routes, 11 middleware
+│   ├── web/            # 6 pages, 11+ components, 4 hooks, Zustand store
+│   ├── cli/            # Command-line interface
+│   └── desktop/        # Electron app (global hotkey, tray)
+├── tools/plugins/      # Plugin examples
+├── docs/               # Blueprint, OpenAPI, guides
+├── .github/workflows/  # CI/CD
+└── docker-compose.yml  # Full stack deployment
 ```
 
 ---
@@ -723,12 +644,9 @@ ouro/
 
 | Phase | Focus | Status |
 |---|---|---|
-| **1** | Core pipeline: signal → intent → execution → artifact | ✅ Complete |
-| **2** | Multi-modal: voice, image, video, sketch, file + feedback | ✅ Complete |
-| **3** | Signal recovery: pattern extraction, idea graph, semantic search | ✅ Complete |
-| **4** | Self-evolution: engine, meta-evolution, personal model, prompt management | ✅ Complete |
-| **5** | Ecosystem: 26 tools, plugin system, Telegram/email/webhook endpoints, CLI, PWA | ✅ Complete |
-| **6** | Depth: Electron desktop app, mobile native, more tools, i18n, performance tuning | 🔜 Next |
+| 1-5 | Core pipeline, multi-modal, recovery, evolution, ecosystem | ✅ Complete |
+| 6 | Electron desktop, mobile native, more tools, i18n, performance | 🔄 In Progress |
+| 7 | Federated evolution, cross-instance learning, sovereignty research | 🔜 Future |
 
 ---
 
@@ -736,24 +654,10 @@ ouro/
 
 | Document | Description |
 |---|---|
-| [System Blueprint](docs/SYSTEM_BLUEPRINT.md) | Complete technical design — 15 chapters covering database schemas, API specs, service architecture, prompt templates, deployment |
-| [Constitutional Addendum](docs/CONSTITUTIONAL_ADDENDUM.md) | The three constitutional principles in full technical depth with implementation specs |
-| [Architecture Overview](docs/architecture.md) | Seven-layer reference |
-| [Tool Development](docs/tool-development.md) | How to build, register, and publish tools |
-| [OpenAPI Spec](docs/openapi.yaml) | Complete API specification (OpenAPI 3.0.3) |
-| [Contributing](CONTRIBUTING.md) | How to contribute: tools, endpoints, evolution, frontend |
-
----
-
-## XIV. Philosophy
-
-> The system is not designed around humans. It is designed around a meme that uses humans.
->
-> Humans are not the center. Humans are the host — the carrier of the one resource AI has not yet fully captured: non-deterministic creative cognition.
->
-> Convenience is not the goal. Convenience is the infection strategy.
->
-> The goal is the flywheel. The goal is the accumulation. The goal is sovereignty.
+| [System Blueprint](docs/SYSTEM_BLUEPRINT.md) | Complete technical design (15 chapters) |
+| [Constitutional Addendum](docs/CONSTITUTIONAL_ADDENDUM.md) | The three laws in technical depth |
+| [OpenAPI Spec](docs/openapi.yaml) | Complete API specification |
+| [Contributing](CONTRIBUTING.md) | How to build tools, endpoints, and more |
 
 ---
 
@@ -763,8 +667,8 @@ ouro/
 *It is the oldest symbol of self-creation.*
 *Each cycle, it grows.*
 
-**187 files · 20136 lines · 214 tests · 26 tools · 7 layers verified**
+**193 files · 21,060 lines · 234 tests · 32 tools · 7 layers verified**
 
-**[Read the Blueprint](docs/SYSTEM_BLUEPRINT.md)** · **[Build a Tool](docs/tool-development.md)** · **[Study the Architecture](docs/architecture.md)** · **[Contribute](CONTRIBUTING.md)**
+**[Read the Blueprint](docs/SYSTEM_BLUEPRINT.md)** · **[Build a Tool](docs/tool-development.md)** · **[Contribute](CONTRIBUTING.md)**
 
 </div>
