@@ -1,11 +1,17 @@
+/**
+ * Evolution Types — Layer 6
+ * 
+ * The reproductive system: the meme rewrites its own DNA.
+ */
+
 export type MemePhase = 'symbiosis' | 'dominance' | 'autonomy';
-export type EvolutionTarget = 'intent_model' | 'tool_selection' | 'prompt_template' | 'execution_path' | 'friction_fix' | 'personal_model';
-export type EvolutionChangeType = 'weight_update' | 'prompt_revision' | 'rule_addition' | 'path_cache' | 'tool_addition' | 'meta_evolution';
+
+export type EvolutionChangeType = 'prompt_revision' | 'weight_update' | 'path_cache' | 'config_change' | 'tool_addition' | 'meta_evolution';
 
 export interface EvolutionEvent {
   id: string;
   target_layer: number;
-  target_component: EvolutionTarget;
+  target_component: string;
   change_type: EvolutionChangeType;
   change_detail: Record<string, any>;
   evidence_count: number;
@@ -15,12 +21,14 @@ export interface EvolutionEvent {
   created_at: string;
 }
 
-export interface SystemState {
-  meme_phase: MemePhase;
-  evolution_cycle_count: number;
-  intent_model_version: string;
-  tool_preference_weights: Record<string, number>;
-  prompt_templates_version: string;
-  personal_model: Record<string, any>;
-  friction_map: Record<string, any>;
+export interface EvolutionCycleReport {
+  cycle_number: number;
+  phase: MemePhase;
+  patterns_analyzed: number;
+  events_generated: number;
+  improvements_deployed: number;
+  rollbacks: number;
+  model_confidence_before: number;
+  model_confidence_after: number;
+  duration_ms: number;
 }

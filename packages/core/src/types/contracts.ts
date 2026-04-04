@@ -1,36 +1,74 @@
-import { UniversalSignalInput, CapturedSignal } from './signal';
-import { ParsedIntent } from './intent';
-import { ExecutionPlan } from './execution';
-import { Artifact } from './artifact';
-import { SignalPattern, Feedback } from './recovery';
-import { EvolutionEvent } from './evolution';
+/**
+ * The Eight Contracts — The System's Genetic Code
+ * 
+ * These 8 interfaces ARE the system.
+ * Everything else is implementation detail.
+ * 
+ * Any component can be replaced without affecting any other.
+ * Any new capability can be added by implementing the right interface.
+ * The system can evolve its own implementations without changing its structure.
+ */
 
+import type { CapturedSignal, UniversalSignalInput } from './signal';
+import type { ParsedIntent, ParsingContext } from './intent';
+import type { ExecutionPlan, ToolManifest, OuroTool, ToolInput, ToolOutput } from './execution';
+import type { SignalPattern } from './recovery';
+import type { EvolutionEvent } from './evolution';
+
+// ===== Contract 1: Signal Processor =====
 export interface SignalProcessor {
   canProcess(input: UniversalSignalInput): boolean;
   process(input: UniversalSignalInput): Promise<CapturedSignal>;
 }
 
-export interface IntentParserContract {
-  parse(signal: CapturedSignal, context?: Record<string, any>): Promise<ParsedIntent>;
+// ===== Contract 2: Intent Parser =====
+export interface IntentParser {
+  parse(signal: CapturedSignal, context?: ParsingContext): Promise<ParsedIntent>;
 }
 
-export interface ExecutionPlannerContract {
-  plan(intent: ParsedIntent, availableTools: ToolManifest[]): Promise<ExecutionPlan>;
+// ===== Contract 3: Execution Planner =====
+export interface ExecutionPlanner {
+  plan(intent: ParsedIntent, tools: ToolManifest[]): Promise<ExecutionPlan>;
 }
 
-export interface OuroTool {
-  manifest: ToolManifest;
-  execute(input: ToolInput): Promise<ToolOutput>;
-  probe?(): Promise<Record<string, any>>;
-  healthCheck?(): Promise<boolean>;
-}
+// ===== Contract 4: Ouro Tool =====
+// (defined in execution.ts as OuroTool interface)
 
+// ===== Contract 5: Signal Recoverer =====
 export interface SignalRecoverer {
-  recover(signal: CapturedSignal, intent: ParsedIntent, plan: ExecutionPlan, feedback: Feedback[]): Promise<SignalPattern[]>;
+  recover(
+    signal: CapturedSignal,
+    intent: ParsedIntent,
+    plan: ExecutionPlan,
+    feedback: any[],
+  ): Promise<SignalPattern[]>;
 }
 
-export interface EvolutionEngineContract {
-  evolve(patterns: SignalPattern[]): Promise<EvolutionEvent[]>;
+// ===== Contract 6: Evolution Engine =====
+export interface EvolutionEngine {
+  runCycle(): Promise<EvolutionEvent[]>;
+  canEvolve(): Promise<boolean>;
+  rollback(eventId: string): Promise<boolean>;
+}
+
+// ===== Contract 7: AI Provider =====
+export interface AIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string | Array<{ type: string; [key: string]: any }>;
+}
+
+export interface AICallOptions {
+  model?: string;
+  temperature?: number;
+  max_tokens?: number;
+  stop?: string[];
+}
+
+export interface AIResponse {
+  content: string;
+  model: string;
+  tokens_used: { input: number; output: number };
+  refused?: boolean;
 }
 
 export interface AIProvider {
@@ -41,39 +79,11 @@ export interface AIProvider {
   speechToText?(audio: Buffer): Promise<string>;
 }
 
+// ===== Contract 8: Storage Backend =====
 export interface StorageBackend {
-  put(key: string, data: Buffer, metadata?: Record<string, any>): Promise<string>;
-  get(key: string): Promise<Buffer>;
-  delete(key: string): Promise<void>;
+  upload(buffer: Buffer, filename: string, contentType: string): Promise<string>;
+  download(url: string): Promise<Buffer>;
+  delete(url: string): Promise<void>;
+  exists(url: string): Promise<boolean>;
   list(prefix: string): Promise<string[]>;
 }
-
-export interface ToolManifest {
-  id: string;
-  version: string;
-  name: string;
-  description: string;
-  capabilities: string[];
-  input_schema: Record<string, any>;
-  output_schema: Record<string, any>;
-  requirements?: { gpu?: boolean; memory_mb?: number; timeout_ms?: number; network?: boolean; api_keys?: string[] };
-  author?: string;
-  tags?: string[];
-}
-
-export interface ToolInput {
-  parameters: Record<string, any>;
-  context: { signal_id: string; intent: string; user_preferences: Record<string, any>; previous_step_outputs: Record<string, any> };
-  resources: { temp_dir: string; output_dir: string };
-}
-
-export interface ToolOutput {
-  success: boolean;
-  artifacts: Array<{ type: 'file' | 'text' | 'url' | 'data'; content: any; metadata: Record<string, any> }>;
-  logs?: string[];
-  metrics?: { duration_ms: number; tokens_used?: number; cost_usd?: number };
-}
-
-export interface AIMessage { role: 'system' | 'user' | 'assistant'; content: string | Array<{ type: string; [key: string]: any }> }
-export interface AICallOptions { model?: string; max_tokens?: number; temperature?: number; json_mode?: boolean }
-export interface AIResponse { content: string; model: string; tokens_used: { input: number; output: number }; refused?: boolean }
