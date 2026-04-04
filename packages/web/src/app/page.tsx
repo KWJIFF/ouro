@@ -23,6 +23,7 @@ export default function Home() {
           <NavLink href="/history" icon={<Zap size={16} />} label="Signals" />
           <NavLink href="/history" icon={<GitBranch size={16} />} label="Graph" />
           <NavLink href="/evolution" icon={<Activity size={16} />} label="Evolution" />
+          <NavLink href="/settings" icon={<Wrench size={16} />} label="Settings" />
         <NavLink href="/settings" icon={<Wrench size={16} />} label="Settings" /></nav>
       </header>
 
