@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: transparent;
+      -webkit-app-region: drag;
+    }
+    .container {
+      background: rgba(12, 12, 15, 0.95);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 16px;
+      padding: 16px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+    }
+    .header span { font-size: 14px; }
+    input {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 15px;
+      color: white;
+      outline: none;
+      -webkit-app-region: no-drag;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: rgba(139, 92, 246, 0.5); }
+    input::placeholder { color: rgba(255,255,255,0.25); }
+    .status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(139, 92, 246, 0.6);
+      text-align: center;
+      min-height: 16px;
+    }
+    .status.success { color: rgba(16, 185, 129, 0.8); }
+    .status.error { color: rgba(239, 68, 68, 0.8); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <span>🐍</span> Quick Signal — Press Enter to emit, Esc to close
+    </div>
+    <input type="text" id="signal" placeholder="What's on your mind?" autofocus>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const input = document.getElementById('signal');
+    const status = document.getElementById('status');
+
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Escape') {
+        window.close();
+        return;
+      }
+
+      if (e.key === 'Enter' && input.value.trim()) {
+        const text = input.value.trim();
+        input.disabled = true;
+        status.textContent = 'Processing...';
+        status.className = 'status';
+
+        try {
+          const result = await window.ouro.submitSignal(text);
+          if (result.error) {
+            status.textContent = `Error: ${result.error}`;
+            status.className = 'status error';
+          } else {
+            status.textContent = `✓ ${result.intent?.type || 'captured'} — ${result.artifacts?.length || 0} artifact(s)`;
+            status.className = 'status success';
+            setTimeout(() => window.close(), 1500);
+          }
+        } catch (err) {
+          status.textContent = 'Failed to connect';
+          status.className = 'status error';
+        }
+
+        input.disabled = false;
+        input.value = '';
+        input.focus();
+      }
+    });
+  </script>
+</body>
+</html>
