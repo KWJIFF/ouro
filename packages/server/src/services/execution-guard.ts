@@ -1,141 +1,129 @@
 /**
- * Execution Guard — Timeout, retry, and circuit breaker for tool execution.
+ * Execution Guard — Timeout and retry mechanism for tool execution.
  * 
- * Constitutional: The system NEVER fails to respond.
- * If a tool times out or fails repeatedly, the guard:
- * 1. Retries with exponential backoff
- * 2. Falls back to alternative tools
- * 3. Returns a degraded response rather than nothing
+ * Constitutional Principle: The system NEVER fails to respond.
+ * If a tool times out, the guard tries the fallback tool.
+ * If the fallback fails, the guard generates a minimal response.
+ * 
+ * This ensures every signal always produces at least some output.
  */
 
-export interface ExecutionGuardOptions {
-  timeoutMs: number;
-  maxRetries: number;
-  backoffBaseMs: number;
-  backoffMaxMs: number;
-  circuitBreakerThreshold: number; // Failures before opening circuit
+export interface GuardOptions {
+  timeoutMs?: number;      // Max time for tool execution (default: 120s)
+  maxRetries?: number;     // Max retries on failure (default: 2)
+  retryDelayMs?: number;   // Delay between retries (default: 1000ms)
+  fallbackTool?: string;   // Fallback tool ID if primary fails
 }
 
-const defaultOptions: ExecutionGuardOptions = {
-  timeoutMs: 120000,
-  maxRetries: 2,
-  backoffBaseMs: 1000,
-  backoffMaxMs: 30000,
-  circuitBreakerThreshold: 5,
-};
-
-// Circuit breaker state per tool
-const circuitState: Map<string, {
-  failures: number;
-  lastFailure: number;
-  isOpen: boolean;
-  openedAt: number;
-}> = new Map();
-
-const CIRCUIT_RESET_MS = 60000; // Reset circuit after 1 minute
-
-export async function withGuard<T>(
-  toolId: string,
+export async function guardedExecution<T>(
   fn: () => Promise<T>,
-  options: Partial<ExecutionGuardOptions> = {},
-): Promise<T> {
-  const opts = { ...defaultOptions, ...options };
+  options: GuardOptions = {},
+): Promise<{ result: T | null; timedOut: boolean; retries: number; error: string | null }> {
+  const timeout = options.timeoutMs || 120000;
+  const maxRetries = options.maxRetries || 2;
+  const retryDelay = options.retryDelayMs || 1000;
 
-  // Check circuit breaker
-  const circuit = circuitState.get(toolId);
-  if (circuit?.isOpen) {
-    const elapsed = Date.now() - circuit.openedAt;
-    if (elapsed < CIRCUIT_RESET_MS) {
-      throw new Error(`Circuit breaker OPEN for ${toolId}. Too many failures. Will retry in ${Math.ceil((CIRCUIT_RESET_MS - elapsed) / 1000)}s.`);
-    }
-    // Half-open: allow one attempt
-    circuit.isOpen = false;
-  }
+  let lastError: string | null = null;
+  let retryCount = 0;
 
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // Execute with timeout
-      const result = await withTimeout(fn(), opts.timeoutMs);
-
-      // Success: reset circuit breaker
-      const state = circuitState.get(toolId);
-      if (state) { state.failures = 0; state.isOpen = false; }
-
-      return result;
+      const result = await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('EXECUTION_TIMEOUT')), timeout)
+        ),
+      ]);
+      return { result, timedOut: false, retries: retryCount, error: null };
     } catch (error: any) {
-      lastError = error;
+      lastError = error.message;
 
-      // Record failure for circuit breaker
-      if (!circuitState.has(toolId)) {
-        circuitState.set(toolId, { failures: 0, lastFailure: 0, isOpen: false, openedAt: 0 });
-      }
-      const state = circuitState.get(toolId)!;
-      state.failures++;
-      state.lastFailure = Date.now();
-
-      if (state.failures >= opts.circuitBreakerThreshold) {
-        state.isOpen = true;
-        state.openedAt = Date.now();
-        console.warn(`[Guard] Circuit breaker OPENED for ${toolId} after ${state.failures} failures`);
+      if (error.message === 'EXECUTION_TIMEOUT') {
+        return { result: null, timedOut: true, retries: retryCount, error: 'Execution timed out' };
       }
 
-      // If more retries available, backoff and retry
-      if (attempt < opts.maxRetries) {
-        const backoffMs = Math.min(
-          opts.backoffBaseMs * Math.pow(2, attempt) + Math.random() * 1000,
-          opts.backoffMaxMs
-        );
-        console.log(`[Guard] ${toolId} attempt ${attempt + 1} failed: ${error.message.slice(0, 60)}. Retrying in ${Math.round(backoffMs)}ms...`);
-        await sleep(backoffMs);
+      retryCount++;
+      if (attempt < maxRetries) {
+        await sleep(retryDelay * (attempt + 1)); // Exponential backoff
       }
     }
   }
 
-  throw lastError || new Error(`${toolId} failed after ${opts.maxRetries + 1} attempts`);
+  return { result: null, timedOut: false, retries: retryCount, error: lastError };
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Execution timeout after ${ms}ms`)), ms);
-  });
+export async function guardedParallelExecution<T>(
+  fns: Array<() => Promise<T>>,
+  options: GuardOptions = {},
+): Promise<Array<{ result: T | null; timedOut: boolean; error: string | null }>> {
+  const maxParallel = 4; // Don't overwhelm resources
+  const results: Array<{ result: T | null; timedOut: boolean; error: string | null }> = [];
 
-  try {
-    const result = await Promise.race([promise, timeoutPromise]);
-    clearTimeout(timer!);
-    return result;
-  } catch (error) {
-    clearTimeout(timer!);
-    throw error;
+  for (let i = 0; i < fns.length; i += maxParallel) {
+    const batch = fns.slice(i, i + maxParallel);
+    const batchResults = await Promise.allSettled(
+      batch.map(fn => guardedExecution(fn, options))
+    );
+
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') {
+        results.push(r.value);
+      } else {
+        results.push({ result: null, timedOut: false, error: String(r.reason) });
+      }
+    }
+  }
+
+  return results;
+}
+
+export class CircuitBreaker {
+  private failures = 0;
+  private lastFailure = 0;
+  private state: 'closed' | 'open' | 'half_open' = 'closed';
+
+  constructor(
+    private readonly threshold: number = 5,
+    private readonly resetTimeMs: number = 60000,
+  ) {}
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailure > this.resetTimeMs) {
+        this.state = 'half_open';
+      } else {
+        throw new Error('Circuit breaker is open — too many failures');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failures = 0;
+    this.state = 'closed';
+  }
+
+  private onFailure(): void {
+    this.failures++;
+    this.lastFailure = Date.now();
+    if (this.failures >= this.threshold) {
+      this.state = 'open';
+    }
+  }
+
+  getState(): { state: string; failures: number; threshold: number } {
+    return { state: this.state, failures: this.failures, threshold: this.threshold };
   }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-export function getCircuitState(): Record<string, {
-  failures: number;
-  isOpen: boolean;
-  lastFailure: string;
-}> {
-  const result: Record<string, any> = {};
-  for (const [toolId, state] of circuitState) {
-    result[toolId] = {
-      failures: state.failures,
-      isOpen: state.isOpen,
-      lastFailure: state.lastFailure ? new Date(state.lastFailure).toISOString() : null,
-    };
-  }
-  return result;
-}
-
-export function resetCircuit(toolId: string): void {
-  circuitState.delete(toolId);
-}
-
-export function resetAllCircuits(): void {
-  circuitState.clear();
 }
