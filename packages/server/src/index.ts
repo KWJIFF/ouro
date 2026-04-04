@@ -22,6 +22,7 @@ import { initConfigManager } from './services/config-manager';
 import { initScheduler } from './services/scheduler';
 import { initCache } from './services/cache';
 import { cacheRoutes } from './routes/cache';
+import { healthRoutes } from './routes/health';
 import { initShutdownHandler } from './services/shutdown';
 import { printEnvReport } from './services/env-validator';
 import { schedulerRoutes } from './routes/scheduler';
@@ -62,7 +63,8 @@ async function main() {
   await app.register(eventRoutes);           // Event stream
   await app.register(configRoutes);
   await app.register(schedulerRoutes);
-  await app.register(cacheRoutes);            // Cache admin       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
+  await app.register(cacheRoutes);
+  await app.register(healthRoutes);           // Detailed health + rate limits            // Cache admin       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
