@@ -14,3 +14,4 @@ export * from './constants/tools';
 // Utilities
 export * from './utils/id';
 export * from './utils/time';
+export * from './utils/format';

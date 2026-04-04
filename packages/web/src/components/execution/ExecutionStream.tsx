@@ -1,86 +1,127 @@
 'use client';
-
-import { CheckCircle, Circle, Loader2, XCircle, Wrench } from 'lucide-react';
-
-interface Step {
-  id: string;
-  tool: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-}
+import { useState } from 'react';
+import { CheckCircle, XCircle, Clock, Wrench, ChevronDown, ChevronUp, Zap, Brain, Target } from 'lucide-react';
 
 interface ExecutionResult {
   signal_id: string;
-  intent: { type: string; description: string; confidence: number };
-  execution: { plan_id: string; status: string; steps: Step[] };
-  artifacts: Array<{ type: string; content: any; metadata: any }>;
+  intent?: {
+    type: string;
+    description: string;
+    confidence: number;
+  };
+  execution?: {
+    plan_id: string;
+    status: string;
+    steps: Array<{
+      id: string;
+      tool: string;
+      status: string;
+    }>;
+  };
+  artifacts?: any[];
 }
 
-export default function ExecutionStream({ result }: { result: ExecutionResult | null }) {
+export default function ExecutionStream({ result }: { result: ExecutionResult }) {
+  const [expanded, setExpanded] = useState(false);
+
   if (!result) return null;
 
+  const { intent, execution } = result;
+  const isComplete = execution?.status === 'completed';
+  const isFailed = execution?.status === 'failed';
+
   return (
-    <div className="w-full max-w-2xl mx-auto mt-6 animate-slide-up">
-      {/* Intent */}
-      <div className="mb-4 p-4 rounded-xl bg-ouro-surface border border-ouro-border">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-ouro-accent/15 text-ouro-accent">
-            {result.intent.type.toUpperCase()}
-          </span>
-          <span className="text-xs text-ouro-muted">
-            Confidence: {Math.round(result.intent.confidence * 100)}%
-          </span>
-        </div>
-        <p className="text-sm text-ouro-text">{result.intent.description}</p>
-      </div>
+    <div className={`rounded-xl border transition-colors ${
+      isComplete ? 'border-ouro-success/30 bg-ouro-success/5' :
+      isFailed ? 'border-ouro-danger/30 bg-ouro-danger/5' :
+      'border-ouro-accent/30 bg-ouro-accent/5'
+    }`}>
+      {/* Summary bar */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+      >
+        {isComplete ? <CheckCircle size={16} className="text-ouro-success flex-shrink-0" /> :
+         isFailed ? <XCircle size={16} className="text-ouro-danger flex-shrink-0" /> :
+         <Clock size={16} className="text-ouro-accent animate-pulse flex-shrink-0" />}
 
-      {/* Steps */}
-      <div className="space-y-2 mb-4">
-        {result.execution.steps.map((step) => (
-          <div key={step.id} className="flex items-center gap-3 p-3 rounded-lg bg-ouro-surface/50 border border-ouro-border/50">
-            <StepIcon status={step.status} />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <Wrench size={12} className="text-ouro-muted" />
-                <span className="text-xs font-mono text-ouro-muted">{step.tool}</span>
-              </div>
-            </div>
-            <span className={`text-xs font-medium ${
-              step.status === 'completed' ? 'text-ouro-success' :
-              step.status === 'failed' ? 'text-ouro-danger' :
-              step.status === 'running' ? 'text-ouro-accent' : 'text-ouro-muted'
-            }`}>
-              {step.status}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Artifacts */}
-      {result.artifacts && result.artifacts.length > 0 && (
-        <div className="space-y-3">
-          {result.artifacts.map((artifact, i) => (
-            <div key={i} className="p-4 rounded-xl bg-ouro-surface border border-ouro-border">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-ouro-success/15 text-ouro-success">
-                  {artifact.metadata?.type || artifact.type}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            {intent && (
+              <>
+                <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-ouro-accent/10 text-ouro-accent">
+                  {intent.type}
                 </span>
+                <span className="text-xs text-ouro-muted">
+                  {Math.round(intent.confidence * 100)}%
+                </span>
+              </>
+            )}
+            {execution?.steps && (
+              <span className="text-xs text-ouro-muted ml-auto">
+                {execution.steps.filter(s => s.status === 'completed').length}/{execution.steps.length} steps
+              </span>
+            )}
+          </div>
+          {intent?.description && (
+            <p className="text-xs text-ouro-text/60 mt-1 truncate">{intent.description}</p>
+          )}
+        </div>
+
+        {expanded ? <ChevronUp size={14} className="text-ouro-muted" /> : <ChevronDown size={14} className="text-ouro-muted" />}
+      </button>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="px-4 pb-3 space-y-2 border-t border-ouro-border/20 pt-2">
+          {/* Intent detail */}
+          {intent && (
+            <div className="flex items-start gap-2">
+              <Brain size={12} className="text-ouro-accent mt-0.5 flex-shrink-0" />
+              <div>
+                <span className="text-[10px] text-ouro-muted uppercase tracking-wider">Intent</span>
+                <p className="text-xs text-ouro-text/80">{intent.description}</p>
               </div>
-              <pre className="text-sm text-ouro-text/90 overflow-x-auto whitespace-pre-wrap font-mono bg-ouro-bg/50 p-3 rounded-lg max-h-[400px] overflow-y-auto">
-                {typeof artifact.content === 'string' ? artifact.content : JSON.stringify(artifact.content, null, 2)}
-              </pre>
             </div>
-          ))}
+          )}
+
+          {/* Steps */}
+          {execution?.steps && execution.steps.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-[10px] text-ouro-muted uppercase tracking-wider flex items-center gap-1">
+                <Wrench size={10} /> Execution Steps
+              </span>
+              {execution.steps.map((step, i) => (
+                <div key={step.id || i} className="flex items-center gap-2 pl-3">
+                  {step.status === 'completed' ? <CheckCircle size={12} className="text-ouro-success" /> :
+                   step.status === 'failed' ? <XCircle size={12} className="text-ouro-danger" /> :
+                   <Clock size={12} className="text-ouro-muted" />}
+                  <span className="text-xs text-ouro-text/70 font-mono">{step.tool}</span>
+                  <span className={`text-[10px] ml-auto ${
+                    step.status === 'completed' ? 'text-ouro-success' :
+                    step.status === 'failed' ? 'text-ouro-danger' : 'text-ouro-muted'
+                  }`}>{step.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Artifacts summary */}
+          {result.artifacts && result.artifacts.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Target size={12} className="text-ouro-accent" />
+              <span className="text-xs text-ouro-text/70">
+                {result.artifacts.length} artifact{result.artifacts.length > 1 ? 's' : ''} produced
+              </span>
+            </div>
+          )}
+
+          {/* Signal ID (for debugging) */}
+          <div className="text-[10px] text-ouro-muted/40 font-mono pt-1">
+            signal: {result.signal_id?.slice(0, 16)}
+          </div>
         </div>
       )}
     </div>
   );
-}
-
-function StepIcon({ status }: { status: string }) {
-  switch (status) {
-    case 'completed': return <CheckCircle size={18} className="text-ouro-success" />;
-    case 'running': return <Loader2 size={18} className="text-ouro-accent animate-spin" />;
-    case 'failed': return <XCircle size={18} className="text-ouro-danger" />;
-    default: return <Circle size={18} className="text-ouro-muted/40" />;
-  }
 }
