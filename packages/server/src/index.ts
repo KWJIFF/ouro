@@ -20,6 +20,8 @@ import { eventRoutes } from './routes/events';
 import { configRoutes } from './routes/config';
 import { initConfigManager } from './services/config-manager';
 import { initScheduler } from './services/scheduler';
+import { initCache } from './services/cache';
+import { cacheRoutes } from './routes/cache';
 import { initShutdownHandler } from './services/shutdown';
 import { printEnvReport } from './services/env-validator';
 import { schedulerRoutes } from './routes/scheduler';
@@ -59,7 +61,8 @@ async function main() {
   await app.register(analyticsRoutes);
   await app.register(eventRoutes);           // Event stream
   await app.register(configRoutes);
-  await app.register(schedulerRoutes);       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
+  await app.register(schedulerRoutes);
+  await app.register(cacheRoutes);            // Cache admin       // Task scheduler admin          // Dynamic config       // Analytics dashboard          // Prompt management           // Email inbound
 
   // Health + System
   app.get('/api/health', async () => ({ status: 'ok', version: '0.3.0', meme: 'alive', uptime: process.uptime() }));
@@ -86,6 +89,7 @@ async function main() {
   wireEventBusToWebSocket();
   printEnvReport();
   initShutdownHandler();
+  initCache().catch(() => {});
   initScheduler();
   const httpServer = createServer(app.server);
   setupWebSocket(httpServer);
