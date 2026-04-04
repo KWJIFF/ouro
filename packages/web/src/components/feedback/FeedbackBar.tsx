@@ -20,10 +20,7 @@ export default function FeedbackBar({ artifactId, signalId, onModify, onAccept }
   const send = async (action: string, modification?: any) => {
     setLoading(true);
     try {
-      await submitFeedback({
-        artifact_id: artifactId,
-        signal_id: signalId,
-        action,
+      await submitFeedback(artifactId, signalId, action, {
         modification,
         time_to_react_ms: Date.now() - startTime,
       });

@@ -30,7 +30,7 @@ export default function SignalComposer({ onResult }: Props) {
         result = await submitSignalBlob('', audioBlob, 'recording.webm');
         clearRecording();
       } else if (attachedFiles.length > 0) {
-        result = await submitSignal(text.trim(), attachedFiles);
+        result = await submitSignal(text.trim(), { attachments: attachedFiles }) as any;
         setAttachedFiles([]);
       } else {
         result = await submitSignal(text.trim());
@@ -61,11 +61,11 @@ export default function SignalComposer({ onResult }: Props) {
     setAttachedFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)]);
   };
 
-  const handleSketchCapture = async (blob: Blob) => {
+  const handleSketchCapture = async (dataUrl: string) => {
     setShowSketch(false);
     setProcessing(true);
     try {
-      const result = await submitSignalBlob(text.trim(), blob, 'sketch.png');
+      const result = await submitSignalBlob(text.trim() || '[sketch]', dataUrl as any, 'sketch.png');
       addSignal({ text: text.trim() || '[sketch]', ...result });
       setCurrentExecution(result);
       setText('');
@@ -103,7 +103,7 @@ export default function SignalComposer({ onResult }: Props) {
 
   return (
     <>
-      {showSketch && <SketchPad onCapture={handleSketchCapture} onClose={() => setShowSketch(false)} />}
+      {showSketch && <SketchPad onSubmit={handleSketchCapture} onCancel={() => setShowSketch(false)} />}
 
       <div className="w-full max-w-2xl mx-auto">
         <div

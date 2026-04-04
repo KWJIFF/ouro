@@ -1,17 +1,21 @@
 'use client';
-import { useRef, useState, useEffect, useCallback } from 'react';
-import { Eraser, Undo2, Download, X } from 'lucide-react';
+import { useRef, useState, useCallback, useEffect } from 'react';
+import { Pencil, Eraser, RotateCcw, Check, X } from 'lucide-react';
 
 interface Props {
-  onCapture: (blob: Blob) => void;
-  onClose: () => void;
+  width?: number;
+  height?: number;
+  onSubmit?: (dataUrl: string) => void;
+  onCancel?: () => void;
 }
 
-export default function SketchPad({ onCapture, onClose }: Props) {
+export default function SketchPad({ width = 400, height = 300, onSubmit, onCancel }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [paths, setPaths] = useState<Array<{ x: number; y: number }[]>>([]);
-  const [currentPath, setCurrentPath] = useState<Array<{ x: number; y: number }>>([]);
+  const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
+  const [penSize, setPenSize] = useState(3);
+  const [color, setColor] = useState('#ffffff');
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -19,68 +23,150 @@ export default function SketchPad({ onCapture, onClose }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.fillStyle = '#161619';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.strokeStyle = '#e8e8e8';
-    ctx.lineWidth = 2;
+    // Set up canvas
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, width, height);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+  }, []);
 
-    for (const path of paths) {
-      if (path.length < 2) continue;
-      ctx.beginPath();
-      ctx.moveTo(path[0].x, path[0].y);
-      for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
-      ctx.stroke();
-    }
-
-    if (currentPath.length >= 2) {
-      ctx.beginPath();
-      ctx.moveTo(currentPath[0].x, currentPath[0].y);
-      for (let i = 1; i < currentPath.length; i++) ctx.lineTo(currentPath[i].x, currentPath[i].y);
-      ctx.stroke();
-    }
-  }, [paths, currentPath]);
-
-  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-    const canvas = canvasRef.current!;
+  const getPos = useCallback((e: React.MouseEvent | React.TouchEvent): { x: number; y: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+
     if ('touches' in e) {
-      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+      return {
+        x: e.touches[0].clientX - rect.left,
+        y: e.touches[0].clientY - rect.top,
+      };
     }
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
-  };
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+  }, []);
 
-  const startDraw = (e: React.MouseEvent | React.TouchEvent) => { setIsDrawing(true); setCurrentPath([getPos(e)]); };
-  const draw = (e: React.MouseEvent | React.TouchEvent) => { if (isDrawing) setCurrentPath(p => [...p, getPos(e)]); };
-  const endDraw = () => { if (currentPath.length > 0) setPaths(p => [...p, currentPath]); setCurrentPath([]); setIsDrawing(false); };
+  const startDrawing = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    const pos = getPos(e);
+    lastPointRef.current = pos;
+    setIsDrawing(true);
+  }, [getPos]);
 
-  const undo = () => setPaths(p => p.slice(0, -1));
-  const clear = () => setPaths([]);
+  const draw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing) return;
+    e.preventDefault();
 
-  const capture = () => {
-    canvasRef.current?.toBlob(blob => { if (blob) onCapture(blob); }, 'image/png');
-  };
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !lastPointRef.current) return;
+
+    const pos = getPos(e);
+
+    ctx.beginPath();
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+    ctx.lineTo(pos.x, pos.y);
+
+    if (tool === 'eraser') {
+      ctx.strokeStyle = '#1a1a2e';
+      ctx.lineWidth = penSize * 4;
+    } else {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = penSize;
+    }
+
+    ctx.stroke();
+    lastPointRef.current = pos;
+  }, [isDrawing, tool, penSize, color, getPos]);
+
+  const stopDrawing = useCallback(() => {
+    setIsDrawing(false);
+    lastPointRef.current = null;
+  }, []);
+
+  const clearCanvas = useCallback(() => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, width, height);
+  }, [width, height]);
+
+  const handleSubmit = useCallback(() => {
+    const dataUrl = canvasRef.current?.toDataURL('image/png');
+    if (dataUrl) onSubmit?.(dataUrl);
+  }, [onSubmit]);
+
+  const colors = ['#ffffff', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
 
   return (
-    <div className="fixed inset-0 bg-ouro-bg/90 z-50 flex flex-col items-center justify-center p-4">
-      <div className="flex items-center gap-3 mb-3">
-        <button onClick={undo} className="p-2 rounded-lg bg-ouro-surface text-ouro-muted hover:text-ouro-text"><Undo2 size={18} /></button>
-        <button onClick={clear} className="p-2 rounded-lg bg-ouro-surface text-ouro-muted hover:text-ouro-text"><Eraser size={18} /></button>
-        <button onClick={capture} className="px-4 py-2 rounded-lg bg-ouro-accent text-white text-sm font-medium">Send Sketch</button>
-        <button onClick={onClose} className="p-2 rounded-lg bg-ouro-surface text-ouro-muted hover:text-ouro-text"><X size={18} /></button>
+    <div className="bg-ouro-surface border border-ouro-border rounded-xl overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-ouro-border/50">
+        <button
+          onClick={() => setTool('pen')}
+          className={`p-1.5 rounded-lg transition-colors ${tool === 'pen' ? 'bg-ouro-accent/20 text-ouro-accent' : 'text-ouro-muted hover:text-ouro-text'}`}
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          onClick={() => setTool('eraser')}
+          className={`p-1.5 rounded-lg transition-colors ${tool === 'eraser' ? 'bg-ouro-accent/20 text-ouro-accent' : 'text-ouro-muted hover:text-ouro-text'}`}
+        >
+          <Eraser size={14} />
+        </button>
+
+        <div className="w-px h-4 bg-ouro-border/30 mx-1" />
+
+        {/* Pen size */}
+        <input
+          type="range" min={1} max={10} value={penSize}
+          onChange={(e) => setPenSize(parseInt(e.target.value))}
+          className="w-16 h-1 appearance-none bg-ouro-border rounded-full"
+        />
+
+        <div className="w-px h-4 bg-ouro-border/30 mx-1" />
+
+        {/* Colors */}
+        <div className="flex gap-1">
+          {colors.map((c) => (
+            <button
+              key={c}
+              onClick={() => { setColor(c); setTool('pen'); }}
+              className={`w-4 h-4 rounded-full border ${color === c && tool === 'pen' ? 'border-ouro-accent scale-125' : 'border-ouro-border/30'}`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+
+        <div className="flex-1" />
+
+        <button onClick={clearCanvas} className="p-1.5 text-ouro-muted hover:text-ouro-text" title="Clear">
+          <RotateCcw size={14} />
+        </button>
+        {onCancel && (
+          <button onClick={onCancel} className="p-1.5 text-ouro-muted hover:text-ouro-danger" title="Cancel">
+            <X size={14} />
+          </button>
+        )}
+        <button onClick={handleSubmit} className="p-1.5 text-ouro-success hover:text-ouro-success/80" title="Submit sketch">
+          <Check size={14} />
+        </button>
       </div>
+
+      {/* Canvas */}
       <canvas
         ref={canvasRef}
-        width={800}
-        height={500}
-        className="rounded-xl border border-ouro-border cursor-crosshair touch-none"
-        style={{ maxWidth: '100%', maxHeight: '70vh' }}
-        onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
-        onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}
+        width={width}
+        height={height}
+        onMouseDown={startDrawing}
+        onMouseMove={draw}
+        onMouseUp={stopDrawing}
+        onMouseLeave={stopDrawing}
+        onTouchStart={startDrawing}
+        onTouchMove={draw}
+        onTouchEnd={stopDrawing}
+        className="cursor-crosshair touch-none"
       />
     </div>
   );
