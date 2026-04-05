@@ -1,40 +1,16 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install core
-COPY packages/core/package.json packages/core/
-COPY packages/core/src packages/core/src
-WORKDIR /app/packages/core
-RUN npm install
-
-# Install web
-WORKDIR /app
+COPY package.json ./
 COPY packages/web/package.json packages/web/
-COPY packages/web/next.config.js packages/web/
-COPY packages/web/tsconfig.json packages/web/
-COPY packages/web/tailwind.config.ts packages/web/
-COPY packages/web/postcss.config.js packages/web/
 
-WORKDIR /app/packages/web
-RUN npm install --legacy-peer-deps
+RUN npm install --workspace=packages/web
 
-# Copy source and build
-COPY packages/web/src packages/web/src
-COPY packages/web/public packages/web/public
+COPY packages/web packages/web
 
-RUN npx next build
-
-# --- Runtime ---
-FROM node:20-alpine AS runtime
-
-WORKDIR /app/packages/web
-
-COPY --from=builder /app/packages/web/.next .next
-COPY --from=builder /app/packages/web/public public
-COPY --from=builder /app/packages/web/node_modules node_modules
-COPY --from=builder /app/packages/web/package.json .
+RUN cd packages/web && npx next build
 
 EXPOSE 3000
 
-CMD ["npx", "next", "start"]
+CMD ["npx", "next", "start", "-p", "3000"]
