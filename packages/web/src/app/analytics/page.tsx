@@ -1,240 +1,213 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Activity, Zap, Brain, Wrench, MessageSquare, GitBranch, Target, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { getAnalytics } from '@/lib/api-client';
+import { BarChart3, TrendingUp, Clock, Zap, Target, PieChart, Activity, ArrowUp, ArrowDown } from 'lucide-react';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+interface AnalyticsData {
+  signals: { total: number; today: number; this_week: number; by_modality: Record<string, number>; by_hour: number[] };
+  intents: { total: number; distribution: Record<string, number>; avg_confidence: number };
+  execution: { total: number; success_rate: number; avg_duration_ms: number; by_tool: Record<string, { total: number; success: number }> };
+  feedback: { total: number; accept_rate: number; modify_rate: number; reject_rate: number; avg_satisfaction: number };
+  evolution: { total_cycles: number; total_events: number; phase: string; improvements: number };
+  patterns: { total: number; by_type: Record<string, number>; top_domains: string[] };
+}
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/api/analytics`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    getAnalytics().then(r => {
+      setData(r?.data || r || mockData());
+      setLoading(false);
+    });
   }, []);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-ouro-muted">Loading analytics...</div>;
-  if (!data) return <div className="min-h-screen flex items-center justify-center text-ouro-muted">No data available yet.</div>;
-
-  const o = data.overview || {};
-  const s = data.signal_analytics || {};
-  const i = data.intent_analytics || {};
-  const e = data.execution_analytics || {};
-  const f = data.feedback_analytics || {};
-  const ev = data.evolution_analytics || {};
-  const p = data.pattern_analytics || {};
-
-  const TrendIcon = s.trend === 'growing' ? TrendingUp : s.trend === 'declining' ? TrendingDown : Minus;
-  const trendColor = s.trend === 'growing' ? 'text-ouro-success' : s.trend === 'declining' ? 'text-ouro-danger' : 'text-ouro-muted';
+  if (loading) return <LoadingState />;
+  if (!data) return <EmptyState />;
 
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center gap-3 px-6 py-4 border-b border-ouro-border/50">
-        <a href="/" className="text-ouro-muted hover:text-ouro-text"><ArrowLeft size={20} /></a>
-        <Activity size={20} className="text-ouro-accent" />
-        <h1 className="font-bold text-lg">Analytics</h1>
-        <span className={`text-xs ml-auto flex items-center gap-1 ${trendColor}`}>
-          <TrendIcon size={14} /> {s.trend || 'stable'}
-        </span>
+    <main className="min-h-screen bg-ouro-bg px-4 py-8 max-w-7xl mx-auto">
+      <header className="mb-8">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <BarChart3 size={24} className="text-ouro-accent" />
+          Analytics
+        </h1>
+        <p className="text-sm text-ouro-muted mt-1">System-wide metrics across all 7 layers</p>
       </header>
 
-      <div className="max-w-5xl mx-auto p-6 space-y-8">
-        {/* Overview Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <MetricCard icon={<Zap size={16} />} label="Signals" value={o.total_signals} sub={`${s.signals_today || 0} today`} />
-          <MetricCard icon={<Target size={16} />} label="Artifacts" value={o.total_artifacts} sub={`${(e.success_rate * 100 || 0).toFixed(0)}% success`} />
-          <MetricCard icon={<Brain size={16} />} label="Patterns" value={o.total_patterns} sub={`${p.association_density?.toFixed(2) || 0} density`} />
-          <MetricCard icon={<GitBranch size={16} />} label="Connections" value={o.total_connections} sub={`${ev.total_cycles || 0} evo cycles`} />
-        </div>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <MetricCard icon={<Zap size={18} />} label="Signals" value={data.signals.total} sub={`${data.signals.today} today`} color="accent" />
+        <MetricCard icon={<Target size={18} />} label="Artifacts" value={data.execution.total} sub={`${Math.round(data.execution.success_rate * 100)}% success`} color="success" />
+        <MetricCard icon={<Activity size={18} />} label="Patterns" value={data.patterns.total} sub={`${data.patterns.top_domains?.[0] || 'general'}`} color="warning" />
+        <MetricCard icon={<TrendingUp size={18} />} label="Evolution" value={data.evolution.total_events} sub={data.evolution.phase} color="info" />
+      </div>
 
-        {/* Signal Temporal Distribution */}
-        <Section title="Signal Activity by Hour">
-          <div className="flex items-end gap-1 h-32 px-2">
-            {(s.by_hour || new Array(24).fill(0)).map((count: number, hour: number) => {
-              const max = Math.max(...(s.by_hour || [1]));
-              const height = max > 0 ? (count / max) * 100 : 0;
+      {/* Signal Heatmap */}
+      <section className="bg-ouro-surface/30 rounded-xl p-6 mb-6 border border-ouro-border/20">
+        <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <Clock size={14} className="text-ouro-accent" /> Signal Activity by Hour
+        </h2>
+        <div className="flex gap-1 items-end h-24">
+          {(data.signals.by_hour || Array(24).fill(0)).map((count: number, hour: number) => {
+            const max = Math.max(...(data.signals.by_hour || [1]));
+            const height = max > 0 ? (count / max) * 100 : 5;
+            return (
+              <div key={hour} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-t transition-all hover:opacity-80"
+                  style={{
+                    height: `${Math.max(height, 3)}%`,
+                    backgroundColor: count > 0 ? `rgba(139, 92, 246, ${0.3 + (height / 100) * 0.7})` : 'rgba(255,255,255,0.03)',
+                  }}
+                  title={`${hour}:00 — ${count} signals`}
+                />
+                {hour % 6 === 0 && <span className="text-[8px] text-ouro-muted/40">{hour}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Two column layout */}
+      <div className="grid md:grid-cols-2 gap-6 mb-6">
+        {/* Intent Distribution */}
+        <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+          <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <PieChart size={14} className="text-ouro-accent" /> Intent Distribution
+          </h2>
+          <div className="space-y-2">
+            {Object.entries(data.intents.distribution || {}).map(([type, count]) => {
+              const total = Object.values(data.intents.distribution || {}).reduce((s, c) => s + (c as number), 0);
+              const pct = total > 0 ? ((count as number) / total) * 100 : 0;
+              const colors: Record<string, string> = {
+                create: '#8b5cf6', modify: '#ec4899', explore: '#3b82f6',
+                capture: '#10b981', connect: '#f59e0b', compose: '#6366f1',
+              };
               return (
-                <div key={hour} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full bg-ouro-accent/20 rounded-t relative" style={{ height: `${Math.max(2, height)}%` }}>
-                    <div className="absolute inset-0 bg-ouro-accent rounded-t" style={{ height: `${height}%` }} />
+                <div key={type} className="flex items-center gap-3">
+                  <span className="text-xs text-ouro-muted w-16">{type}</span>
+                  <div className="flex-1 h-2 bg-ouro-bg/50 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: colors[type] || '#6b7280' }} />
                   </div>
-                  <span className="text-[9px] text-ouro-muted">{hour}</span>
+                  <span className="text-xs text-ouro-muted/60 w-8 text-right">{Math.round(pct)}%</span>
                 </div>
               );
             })}
           </div>
-        </Section>
+          <div className="mt-3 text-[10px] text-ouro-muted/40">
+            Avg confidence: {(data.intents.avg_confidence * 100).toFixed(0)}%
+          </div>
+        </section>
 
-        {/* Two-column layout */}
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* Intent Distribution */}
-          <Section title="Intent Distribution">
-            <div className="space-y-2">
-              {Object.entries(i.by_type || {}).map(([type, count]: any) => {
-                const total = Object.values(i.by_type || {}).reduce((s: number, v: any) => s + v, 0);
-                const pct = total > 0 ? (count / total) * 100 : 0;
-                const colors: Record<string, string> = {
-                  create: 'bg-ouro-accent', explore: 'bg-blue-500', capture: 'bg-ouro-success',
-                  modify: 'bg-yellow-500', connect: 'bg-pink-500', compose: 'bg-orange-500',
-                };
+        {/* Tool Performance */}
+        <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+          <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+            <Target size={14} className="text-ouro-accent" /> Tool Performance
+          </h2>
+          <div className="space-y-2">
+            {Object.entries(data.execution.by_tool || {})
+              .sort(([, a]: any, [, b]: any) => b.total - a.total)
+              .slice(0, 8)
+              .map(([tool, stats]: [string, any]) => {
+                const rate = stats.total > 0 ? (stats.success / stats.total) * 100 : 0;
                 return (
-                  <div key={type} className="flex items-center gap-3">
-                    <span className="text-xs text-ouro-muted w-16">{type}</span>
-                    <div className="flex-1 h-4 bg-ouro-border/30 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${colors[type] || 'bg-ouro-accent'}`} style={{ width: `${pct}%` }} />
+                  <div key={tool} className="flex items-center gap-3">
+                    <span className="text-xs text-ouro-muted w-28 truncate">{tool}</span>
+                    <div className="flex-1 h-2 bg-ouro-bg/50 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-ouro-success/60" style={{ width: `${rate}%` }} />
                     </div>
-                    <span className="text-xs text-ouro-text w-8 text-right">{count}</span>
+                    <span className="text-[10px] text-ouro-muted/60 w-16 text-right">{stats.total} runs</span>
                   </div>
                 );
               })}
-              {Object.keys(i.by_type || {}).length === 0 && (
-                <p className="text-xs text-ouro-muted text-center py-4">No intents recorded yet.</p>
-              )}
-            </div>
-          </Section>
+          </div>
+          <div className="mt-3 text-[10px] text-ouro-muted/40">
+            Avg execution: {data.execution.avg_duration_ms}ms
+          </div>
+        </section>
+      </div>
 
-          {/* Tool Usage */}
-          <Section title="Tool Performance">
-            <div className="space-y-2">
-              {(e.by_tool || []).slice(0, 8).map((t: any) => (
-                <div key={t.tool} className="flex items-center gap-2">
-                  <Wrench size={12} className="text-ouro-accent flex-shrink-0" />
-                  <span className="text-xs text-ouro-text truncate flex-1">{t.tool}</span>
-                  <span className="text-xs text-ouro-muted">{t.uses}×</span>
-                  <span className={`text-xs ${t.success_rate > 0.8 ? 'text-ouro-success' : t.success_rate > 0.5 ? 'text-yellow-500' : 'text-ouro-danger'}`}>
-                    {(t.success_rate * 100).toFixed(0)}%
-                  </span>
-                </div>
-              ))}
-              {(e.by_tool || []).length === 0 && (
-                <p className="text-xs text-ouro-muted text-center py-4">No tool usage recorded yet.</p>
-              )}
-            </div>
-          </Section>
-
-          {/* Feedback Stats */}
-          <Section title="Feedback Analysis">
-            <div className="grid grid-cols-3 gap-3 mb-3">
-              <MiniStat label="Accept" value={`${(f.accept_rate * 100 || 0).toFixed(0)}%`} color="text-ouro-success" />
-              <MiniStat label="Modify" value={`${(f.modify_rate * 100 || 0).toFixed(0)}%`} color="text-yellow-500" />
-              <MiniStat label="Reject" value={`${(f.reject_rate * 100 || 0).toFixed(0)}%`} color="text-ouro-danger" />
-            </div>
-            <div className="text-xs text-ouro-muted">
-              Avg satisfaction: <span className="text-ouro-text font-medium">{(f.avg_satisfaction || 0).toFixed(2)}</span>
-              {f.avg_time_to_react_ms > 0 && (
-                <> · Avg reaction: <span className="text-ouro-text font-medium">{(f.avg_time_to_react_ms / 1000).toFixed(1)}s</span></>
-              )}
-            </div>
-          </Section>
-
-          {/* Pattern Insights */}
-          <Section title="Pattern Insights">
-            <div className="space-y-3">
-              {(p.top_creativity_triggers || []).length > 0 && (
-                <div>
-                  <span className="text-[10px] text-ouro-muted uppercase tracking-wider">Creativity Triggers</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {(p.top_creativity_triggers || []).slice(0, 5).map((t: any) => (
-                      <span key={t.trigger} className="text-xs px-2 py-0.5 rounded bg-ouro-accent/10 text-ouro-accent">
-                        {t.trigger} ({t.count})
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {(p.top_friction_points || []).length > 0 && (
-                <div>
-                  <span className="text-[10px] text-ouro-muted uppercase tracking-wider">Friction Points</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {(p.top_friction_points || []).slice(0, 5).map((f: any) => (
-                      <span key={f.type} className="text-xs px-2 py-0.5 rounded bg-ouro-danger/10 text-ouro-danger">
-                        {f.type} ({f.count})
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {(p.top_creativity_triggers || []).length === 0 && (p.top_friction_points || []).length === 0 && (
-                <p className="text-xs text-ouro-muted text-center py-4">Patterns will emerge as you emit more signals.</p>
-              )}
-            </div>
-          </Section>
+      {/* Feedback & Satisfaction */}
+      <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20 mb-6">
+        <h2 className="text-sm font-semibold mb-4">Feedback & Satisfaction</h2>
+        <div className="grid grid-cols-4 gap-4">
+          <FeedbackMetric label="Accept" value={data.feedback.accept_rate} icon={<ArrowUp size={12} />} good />
+          <FeedbackMetric label="Modify" value={data.feedback.modify_rate} icon={<Activity size={12} />} />
+          <FeedbackMetric label="Reject" value={data.feedback.reject_rate} icon={<ArrowDown size={12} />} bad />
+          <FeedbackMetric label="Satisfaction" value={data.feedback.avg_satisfaction} icon={<TrendingUp size={12} />} good />
         </div>
+      </section>
 
-        {/* Modality Distribution */}
-        <Section title="Signal Modalities">
-          <div className="flex gap-3 flex-wrap">
-            {Object.entries(s.by_modality || {}).map(([mod, count]: any) => {
-              const icons: Record<string, string> = {
-                text: '💬', voice: '🎤', image: '📷', video: '🎥', sketch: '✏️', file: '📎', composite: '📦',
-              };
-              return (
-                <div key={mod} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                  <span>{icons[mod] || '📡'}</span>
-                  <span className="text-xs text-ouro-text">{mod}</span>
-                  <span className="text-xs text-ouro-muted">{count}</span>
-                </div>
-              );
-            })}
-            {Object.keys(s.by_modality || {}).length === 0 && (
-              <p className="text-xs text-ouro-muted">No signals recorded yet.</p>
-            )}
-          </div>
-        </Section>
+      {/* Pattern Insights */}
+      <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+        <h2 className="text-sm font-semibold mb-4">Pattern Insights</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {Object.entries(data.patterns.by_type || {}).map(([type, count]) => (
+            <div key={type} className="bg-ouro-bg/30 rounded-lg p-3 text-center">
+              <div className="text-lg font-bold text-ouro-accent">{count as number}</div>
+              <div className="text-[10px] text-ouro-muted mt-1">{type.replace(/_/g, ' ')}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <span className="text-[10px] text-ouro-muted/40">Top domains:</span>
+          {(data.patterns.top_domains || []).map((d: string) => (
+            <span key={d} className="text-[10px] px-2 py-0.5 rounded-full bg-ouro-accent/10 text-ouro-accent">{d}</span>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
 
-        {/* Evolution Timeline */}
-        <Section title="Evolution Impact">
-          <div className="space-y-2">
-            {Object.entries(ev.by_component || {}).map(([comp, count]: any) => (
-              <div key={comp} className="flex items-center gap-3">
-                <span className="text-xs text-ouro-accent w-32 truncate">{comp}</span>
-                <div className="flex-1 h-3 bg-ouro-border/30 rounded-full overflow-hidden">
-                  <div className="h-full bg-ouro-accent/60 rounded-full" style={{
-                    width: `${Math.min(100, (count / Math.max(...Object.values(ev.by_component || { a: 1 }) as number[])) * 100)}%`
-                  }} />
-                </div>
-                <span className="text-xs text-ouro-muted">{count}</span>
-              </div>
-            ))}
-            {Object.keys(ev.by_component || {}).length === 0 && (
-              <p className="text-xs text-ouro-muted text-center py-4">Evolution will begin after accumulating enough patterns.</p>
-            )}
-          </div>
-        </Section>
+function MetricCard({ icon, label, value, sub, color }: any) {
+  const colorMap: Record<string, string> = {
+    accent: 'text-ouro-accent', success: 'text-ouro-success',
+    warning: 'text-yellow-400', info: 'text-blue-400',
+  };
+  return (
+    <div className="bg-ouro-surface/30 rounded-xl p-4 border border-ouro-border/20">
+      <div className="flex items-center gap-2 mb-2">
+        <span className={colorMap[color] || 'text-ouro-muted'}>{icon}</span>
+        <span className="text-xs text-ouro-muted">{label}</span>
+      </div>
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-[10px] text-ouro-muted/50 mt-1">{sub}</div>
+    </div>
+  );
+}
+
+function FeedbackMetric({ label, value, icon, good, bad }: any) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="text-center">
+      <div className={`text-lg font-bold ${good ? 'text-ouro-success' : bad ? 'text-red-400' : 'text-ouro-muted'}`}>
+        {pct}%
+      </div>
+      <div className="flex items-center justify-center gap-1 text-[10px] text-ouro-muted mt-1">
+        {icon} {label}
       </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h2 className="text-sm font-semibold text-ouro-muted mb-3">{title}</h2>
-      <div className="rounded-xl bg-ouro-surface border border-ouro-border/50 p-4">
-        {children}
-      </div>
-    </div>
-  );
+function LoadingState() {
+  return <div className="min-h-screen flex items-center justify-center"><span className="text-ouro-muted animate-pulse">Loading analytics...</span></div>;
 }
 
-function MetricCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: any; sub: string }) {
-  return (
-    <div className="p-4 rounded-xl bg-ouro-surface border border-ouro-border/50 text-center">
-      <div className="flex justify-center mb-2 text-ouro-accent">{icon}</div>
-      <div className="text-2xl font-bold">{value || 0}</div>
-      <div className="text-xs text-ouro-muted mt-0.5">{label}</div>
-      <div className="text-[10px] text-ouro-muted/60 mt-1">{sub}</div>
-    </div>
-  );
+function EmptyState() {
+  return <div className="min-h-screen flex items-center justify-center"><span className="text-ouro-muted">No analytics data yet. Start emitting signals.</span></div>;
 }
 
-function MiniStat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div className="text-center p-2 rounded-lg bg-ouro-bg/50">
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-      <div className="text-[10px] text-ouro-muted">{label}</div>
-    </div>
-  );
+function mockData(): AnalyticsData {
+  return {
+    signals: { total: 0, today: 0, this_week: 0, by_modality: {}, by_hour: Array(24).fill(0) },
+    intents: { total: 0, distribution: {}, avg_confidence: 0 },
+    execution: { total: 0, success_rate: 0, avg_duration_ms: 0, by_tool: {} },
+    feedback: { total: 0, accept_rate: 0, modify_rate: 0, reject_rate: 0, avg_satisfaction: 0 },
+    evolution: { total_cycles: 0, total_events: 0, phase: 'symbiosis', improvements: 0 },
+    patterns: { total: 0, by_type: {}, top_domains: [] },
+  };
 }

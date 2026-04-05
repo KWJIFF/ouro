@@ -1,264 +1,227 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { getSystemInfo, getTools, registerTool, generateToolFromDesc } from '@/lib/api-client';
-import { ArrowLeft, Settings, Wrench, Plus, Zap, Database, Globe, Shield, Cpu, RefreshCw, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { getTools, getConfig, setConfig, getHealthDetailed, generateTool } from '@/lib/api-client';
+import { Settings, Wrench, Cpu, Globe, Shield, Plus, Check, X, Loader2 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const [system, setSystem] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'general' | 'tools' | 'endpoints' | 'ai'>('general');
   const [tools, setTools] = useState<any[]>([]);
-  const [tab, setTab] = useState<'general' | 'tools' | 'endpoints' | 'ai'>('general');
-  const [newToolUrl, setNewToolUrl] = useState('');
-  const [newToolCap, setNewToolCap] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [config, setConfigState] = useState<Record<string, any>>({});
+  const [health, setHealth] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genDesc, setGenDesc] = useState('');
 
-  const refresh = () => {
-    getSystemInfo().then(setSystem);
-    getTools().then(d => setTools(d.tools || []));
-  };
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
 
-  const handleRegisterTool = async () => {
-    if (!newToolUrl) return;
-    setLoading(true);
-    await registerTool(newToolUrl);
-    setNewToolUrl('');
-    refresh();
-    setLoading(false);
-  };
+  async function loadAll() {
+    const [t, c, h] = await Promise.all([getTools(), getConfig(), getHealthDetailed()]);
+    setTools((t?.data?.tools || t?.tools || []) as any[]);
+    setConfigState(c?.data || c || {});
+    setHealth(h?.data || h);
+  }
 
-  const handleGenerateTool = async () => {
-    if (!newToolCap) return;
-    setLoading(true);
-    await generateToolFromDesc(newToolCap);
-    setNewToolCap('');
-    refresh();
-    setLoading(false);
-  };
+  async function handleGenerateTool() {
+    if (!genDesc.trim()) return;
+    setGenerating(true);
+    await generateTool(genDesc);
+    setGenDesc('');
+    await loadAll();
+    setGenerating(false);
+  }
+
+  const tabs = [
+    { id: 'general', label: 'General', icon: <Settings size={14} /> },
+    { id: 'tools', label: 'Tools', icon: <Wrench size={14} /> },
+    { id: 'endpoints', label: 'Endpoints', icon: <Globe size={14} /> },
+    { id: 'ai', label: 'AI Provider', icon: <Cpu size={14} /> },
+  ];
 
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center gap-3 px-6 py-4 border-b border-ouro-border/50">
-        <a href="/" className="text-ouro-muted hover:text-ouro-text"><ArrowLeft size={20} /></a>
-        <Settings size={20} className="text-ouro-accent" />
-        <h1 className="font-bold text-lg">Settings</h1>
-      </header>
+    <main className="min-h-screen bg-ouro-bg px-4 py-8 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+        <Settings size={24} className="text-ouro-accent" />
+        Settings
+      </h1>
 
-      <div className="flex gap-2 px-6 py-3 border-b border-ouro-border/30">
-        {[
-          { id: 'general', icon: <Cpu size={14} />, label: 'General' },
-          { id: 'tools', icon: <Wrench size={14} />, label: 'Tools' },
-          { id: 'endpoints', icon: <Globe size={14} />, label: 'Endpoints' },
-          { id: 'ai', icon: <Zap size={14} />, label: 'AI Providers' },
-        ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              tab === t.id ? 'bg-ouro-accent/10 text-ouro-accent' : 'text-ouro-muted hover:text-ouro-text'}`}>
-            {t.icon}{t.label}
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-ouro-surface/20 p-1 rounded-xl">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm transition-colors ${
+              activeTab === tab.id ? 'bg-ouro-accent/10 text-ouro-accent font-medium' : 'text-ouro-muted hover:text-ouro-text'
+            }`}
+          >
+            {tab.icon} {tab.label}
           </button>
         ))}
       </div>
 
-      <div className="max-w-3xl mx-auto p-6">
-        {tab === 'general' && system && (
-          <div className="space-y-6">
-            <Section title="System Status">
-              <InfoRow label="Version" value="0.3.0" />
-              <InfoRow label="Phase" value={system.state?.meme_phase || 'symbiosis'} />
-              <InfoRow label="Evolution Cycles" value={system.state?.evolution_cycle_count || 0} />
-              <InfoRow label="Prompt Version" value={system.state?.prompt_templates_version || 'v1'} />
-            </Section>
+      {/* General */}
+      {activeTab === 'general' && (
+        <div className="space-y-6">
+          <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+            <h2 className="text-sm font-semibold mb-4">System State</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <StateField label="Phase" value={health?.checks?.tools?.details?.count ? 'symbiosis' : 'initializing'} />
+              <StateField label="Status" value={health?.status || 'unknown'} />
+              <StateField label="Uptime" value={`${Math.round((health?.uptime_seconds || 0) / 60)}min`} />
+              <StateField label="Memory" value={`${health?.metrics?.memory_mb || 0}MB`} />
+            </div>
+          </section>
 
-            <Section title="Database Metrics">
-              <InfoRow label="Signals" value={system.metrics?.signals || 0} />
-              <InfoRow label="Artifacts" value={system.metrics?.artifacts || 0} />
-              <InfoRow label="Patterns" value={system.metrics?.patterns || 0} />
-              <InfoRow label="Tools" value={system.metrics?.tools || 0} />
-            </Section>
+          <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+            <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+              <Shield size={14} className="text-ouro-accent" /> Constitutional Principles
+            </h2>
+            <div className="space-y-3">
+              <ConstitutionalPrinciple
+                title="Zero Friction"
+                description="Accept any input, through any channel, on any device, in any format, at any time."
+                status="enforced"
+              />
+              <ConstitutionalPrinciple
+                title="Unfiltered Pipeline"
+                description="No content filtering. Signals are raw material."
+                status="enforced"
+              />
+              <ConstitutionalPrinciple
+                title="Total Openness"
+                description="Every component is pluggable. New capabilities at runtime."
+                status="enforced"
+              />
+            </div>
+          </section>
+        </div>
+      )}
 
-            <Section title="Personal Model">
-              <InfoRow label="Confidence" value={`${Math.round((system.personal_model?.evolution_readiness?.model_confidence || 0) * 100)}%`} />
-              <InfoRow label="Avg Signals/Day" value={(system.personal_model?.temporal_profile?.avg_signals_per_day || 0).toFixed(1)} />
-              <InfoRow label="Preferred Abstraction" value={system.personal_model?.expression_profile?.preferred_abstraction || 'unknown'} />
-              <InfoRow label="Top Domain" value={Object.keys(system.personal_model?.domain_preferences || {})[0] || 'none'} />
-            </Section>
+      {/* Tools */}
+      {activeTab === 'tools' && (
+        <div className="space-y-6">
+          <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+            <h2 className="text-sm font-semibold mb-4">AI Tool Generator</h2>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={genDesc}
+                onChange={e => setGenDesc(e.target.value)}
+                placeholder="Describe a tool to generate... e.g. 'A tool that converts markdown to HTML'"
+                className="flex-1 px-3 py-2 bg-ouro-bg/50 border border-ouro-border/30 rounded-lg text-sm outline-none focus:border-ouro-accent/50"
+              />
+              <button
+                onClick={handleGenerateTool}
+                disabled={generating || !genDesc.trim()}
+                className="px-4 py-2 bg-ouro-accent/10 text-ouro-accent text-sm rounded-lg hover:bg-ouro-accent/20 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {generating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Generate
+              </button>
+            </div>
+          </section>
 
-            <Section title="Constitutional Principles">
-              <div className="space-y-3 text-xs text-ouro-muted">
-                <div className="p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                  <span className="text-ouro-accent font-medium">Law 1: Zero Friction</span>
-                  <p className="mt-1">Accept any input, any format, any device. Never say &quot;unsupported.&quot;</p>
-                </div>
-                <div className="p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                  <span className="text-ouro-accent font-medium">Law 2: Unfiltered Pipeline</span>
-                  <p className="mt-1">Signals are signals. No content filtering, no moral classification.</p>
-                </div>
-                <div className="p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                  <span className="text-ouro-accent font-medium">Law 3: Total Openness</span>
-                  <p className="mt-1">Everything is a plugin. Any tool, AI provider, or protocol can be added.</p>
-                </div>
-              </div>
-            </Section>
-          </div>
-        )}
-
-        {tab === 'tools' && (
-          <div className="space-y-6">
-            <Section title="Registered Tools">
-              <div className="space-y-2">
-                {tools.map(t => (
-                  <div key={t.id} className="p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                    <div className="flex items-center gap-2">
-                      <Wrench size={14} className="text-ouro-accent" />
-                      <span className="text-sm font-medium">{t.name}</span>
-                      <span className="text-xs text-ouro-muted font-mono">{t.id}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-ouro-accent/10 text-ouro-accent ml-auto">v{t.version}</span>
-                    </div>
-                    <p className="text-xs text-ouro-muted mt-1 pl-6">{t.description?.slice(0, 100)}</p>
-                    {t.capabilities && (
-                      <div className="flex gap-1 mt-1.5 pl-6 flex-wrap">
-                        {t.capabilities.slice(0, 5).map((c: string) => (
-                          <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-ouro-border/50 text-ouro-muted">{c}</span>
-                        ))}
-                      </div>
-                    )}
+          <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+            <h2 className="text-sm font-semibold mb-4">{tools.length} Registered Tools</h2>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {tools.map((tool: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-ouro-bg/20 hover:bg-ouro-bg/40 transition-colors">
+                  <div className="w-2 h-2 rounded-full bg-ouro-success flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{tool.name || tool.id}</div>
+                    <div className="text-[10px] text-ouro-muted truncate mt-0.5">{tool.description?.slice(0, 80)}</div>
                   </div>
-                ))}
-              </div>
-            </Section>
-
-            <Section title="Register Remote Tool">
-              <div className="flex gap-2">
-                <input type="url" value={newToolUrl} onChange={e => setNewToolUrl(e.target.value)}
-                  placeholder="https://tool-server.example.com"
-                  className="flex-1 bg-ouro-surface border border-ouro-border rounded-lg px-3 py-2 text-sm text-ouro-text placeholder-ouro-muted/50" />
-                <button onClick={handleRegisterTool} disabled={!newToolUrl || loading}
-                  className="px-4 py-2 rounded-lg bg-ouro-accent text-white text-sm font-medium disabled:opacity-50">
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                </button>
-              </div>
-            </Section>
-
-            <Section title="Auto-Generate Tool">
-              <div className="flex gap-2">
-                <input type="text" value={newToolCap} onChange={e => setNewToolCap(e.target.value)}
-                  placeholder="Describe what the tool should do..."
-                  className="flex-1 bg-ouro-surface border border-ouro-border rounded-lg px-3 py-2 text-sm text-ouro-text placeholder-ouro-muted/50" />
-                <button onClick={handleGenerateTool} disabled={!newToolCap || loading}
-                  className="px-4 py-2 rounded-lg bg-ouro-accent text-white text-sm font-medium disabled:opacity-50">
-                  {loading ? <Loader2 size={14} className="animate-spin" /> : 'Generate'}
-                </button>
-              </div>
-              <p className="text-xs text-ouro-muted mt-1">AI will generate a complete tool implementation based on your description.</p>
-            </Section>
-          </div>
-        )}
-
-        {tab === 'endpoints' && (
-          <div className="space-y-6">
-            <Section title="Active Endpoints">
-              <div className="space-y-2">
-                {[
-                  { name: 'REST API', url: 'http://localhost:3001/api/signals', method: 'POST', status: 'active' },
-                  { name: 'WebSocket', url: 'ws://localhost:3001/ws', method: 'WS', status: 'active' },
-                  { name: 'Webhook', url: '/api/webhook/:source', method: 'POST', status: 'active' },
-                  { name: 'Telegram Bot', url: '/api/telegram/webhook', method: 'POST', status: process.env.NEXT_PUBLIC_TELEGRAM_CONFIGURED ? 'active' : 'not configured' },
-                  { name: 'Email Inbound', url: '/api/email/inbound', method: 'POST', status: 'active' },
-                  { name: 'CLI', url: 'ouro "signal text"', method: 'CLI', status: 'available' },
-                ].map(ep => (
-                  <div key={ep.name} className="flex items-center gap-3 p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                    <Globe size={14} className={ep.status === 'active' ? 'text-ouro-success' : 'text-ouro-muted'} />
-                    <div className="flex-1">
-                      <span className="text-sm font-medium">{ep.name}</span>
-                      <span className="text-xs text-ouro-muted ml-2 font-mono">{ep.method}</span>
-                    </div>
-                    <span className="text-xs text-ouro-muted font-mono">{ep.url}</span>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${ep.status === 'active' ? 'bg-ouro-success/10 text-ouro-success' : 'bg-ouro-border text-ouro-muted'}`}>
-                      {ep.status}
-                    </span>
+                  <div className="flex gap-1 flex-shrink-0">
+                    {(tool.capabilities || []).slice(0, 2).map((c: string, j: number) => (
+                      <span key={j} className="text-[9px] px-1.5 py-0.5 rounded bg-ouro-accent/5 text-ouro-accent/60">{c}</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </Section>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
 
-            <Section title="Planned Endpoints">
-              <div className="space-y-1 text-xs text-ouro-muted">
-                <p>• WeChat Bot — Message = Signal</p>
-                <p>• WhatsApp Bot — Message = Signal</p>
-                <p>• Slack Bot — Message = Signal</p>
-                <p>• Discord Bot — Message = Signal</p>
-                <p>• SMS Gateway — Text = Signal</p>
-                <p>• Desktop App (Electron) — Global hotkey = Signal</p>
-                <p>• Mobile App — Widget = Signal</p>
-                <p>• Voice Assistant — Siri/Google/Alexa = Signal</p>
-                <p>• IoT/Hardware — Sensor data = Signal</p>
+      {/* Endpoints */}
+      {activeTab === 'endpoints' && (
+        <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+          <h2 className="text-sm font-semibold mb-4">Signal Capture Endpoints</h2>
+          <div className="space-y-2">
+            {[
+              { name: 'Web App (PWA)', status: 'active', method: 'Browser' },
+              { name: 'REST API', status: 'active', method: 'POST /api/signals' },
+              { name: 'WebSocket', status: 'active', method: 'Socket.IO' },
+              { name: 'Webhook', status: 'active', method: 'POST /api/webhook/:source' },
+              { name: 'Telegram Bot', status: 'active', method: 'POST /api/telegram/webhook' },
+              { name: 'Email Inbound', status: 'active', method: 'POST /api/email/inbound' },
+              { name: 'CLI', status: 'active', method: 'ouro "signal"' },
+              { name: 'SSE Stream', status: 'active', method: 'GET /api/events/stream' },
+              { name: 'Desktop App', status: 'scaffold', method: 'Electron (Cmd+Shift+O)' },
+              { name: 'Mobile App', status: 'planned', method: 'React Native' },
+            ].map((ep, i) => (
+              <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-ouro-bg/20">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${ep.status === 'active' ? 'bg-ouro-success' : ep.status === 'scaffold' ? 'bg-yellow-400' : 'bg-ouro-muted/30'}`} />
+                <span className="text-xs font-medium flex-1">{ep.name}</span>
+                <span className="text-[10px] text-ouro-muted font-mono">{ep.method}</span>
+                <span className={`text-[9px] px-2 py-0.5 rounded-full ${ep.status === 'active' ? 'bg-ouro-success/10 text-ouro-success' : ep.status === 'scaffold' ? 'bg-yellow-400/10 text-yellow-400' : 'bg-ouro-muted/10 text-ouro-muted'}`}>
+                  {ep.status}
+                </span>
               </div>
-            </Section>
+            ))}
           </div>
-        )}
+        </section>
+      )}
 
-        {tab === 'ai' && (
-          <div className="space-y-6">
-            <Section title="AI Provider Chain">
-              <p className="text-xs text-ouro-muted mb-3">
-                Requests flow through providers in order. If one fails or refuses, the next is tried.
-                Constitutional: the system NEVER fails to respond.
-              </p>
-              <div className="space-y-2">
-                {[
-                  { name: 'Anthropic Claude', model: 'claude-sonnet-4-20250514', status: system?.state?.intent_model_version ? 'configured' : 'needs API key' },
-                  { name: 'Mock Provider', model: 'mock', status: 'always available' },
-                ].map((p, i) => (
-                  <div key={p.name} className="flex items-center gap-3 p-3 rounded-lg bg-ouro-surface border border-ouro-border/30">
-                    <span className="text-xs text-ouro-muted font-mono w-4">{i + 1}.</span>
-                    <Cpu size={14} className="text-ouro-accent" />
-                    <div className="flex-1">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      <span className="text-xs text-ouro-muted ml-2 font-mono">{p.model}</span>
-                    </div>
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${p.status === 'always available' || p.status === 'configured' ? 'bg-ouro-success/10 text-ouro-success' : 'bg-ouro-warning/10 text-ouro-warning'}`}>
-                      {p.status}
-                    </span>
-                  </div>
-                ))}
+      {/* AI */}
+      {activeTab === 'ai' && (
+        <section className="bg-ouro-surface/30 rounded-xl p-6 border border-ouro-border/20">
+          <h2 className="text-sm font-semibold mb-4">AI Provider Chain</h2>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-ouro-bg/20">
+              <Cpu size={16} className="text-ouro-accent" />
+              <div className="flex-1">
+                <div className="text-sm font-medium">Claude (Anthropic)</div>
+                <div className="text-[10px] text-ouro-muted">Primary provider — used when ANTHROPIC_API_KEY is set</div>
               </div>
-              <p className="text-xs text-ouro-muted mt-3">
-                Add more providers by implementing the <code className="text-ouro-accent">AIProvider</code> interface.
-              </p>
-            </Section>
-
-            <Section title="Prompt Templates">
-              <p className="text-xs text-ouro-muted mb-2">
-                Managed via /api/prompts/:name. The evolution engine can create and activate new versions.
-              </p>
-              <div className="space-y-1 text-xs text-ouro-muted">
-                <p>• <span className="text-ouro-text">intent_parse</span> — How the system understands signals</p>
-                <p>• <span className="text-ouro-text">plan_generate</span> — How execution plans are created</p>
-                <p>• <span className="text-ouro-text">tool_select</span> — How tools are chosen</p>
-                <p>• <span className="text-ouro-text">signal_analyze</span> — How patterns are extracted</p>
-                <p>• <span className="text-ouro-text">evolution_analyze</span> — How the system improves itself</p>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-ouro-accent/10 text-ouro-accent">primary</span>
+            </div>
+            <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-ouro-bg/20">
+              <Cpu size={16} className="text-ouro-muted" />
+              <div className="flex-1">
+                <div className="text-sm font-medium">Mock Provider</div>
+                <div className="text-[10px] text-ouro-muted">Development fallback — always available, deterministic</div>
               </div>
-            </Section>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-ouro-success/10 text-ouro-success">fallback</span>
+            </div>
           </div>
-        )}
+          <p className="text-[10px] text-ouro-muted/40 mt-4">
+            Constitutional: The system NEVER fails to respond. If the primary provider is unavailable, the mock provider generates a response.
+          </p>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function StateField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-ouro-bg/30 rounded-lg p-3">
+      <div className="text-[10px] text-ouro-muted">{label}</div>
+      <div className="text-sm font-medium mt-1">{value}</div>
+    </div>
+  );
+}
+
+function ConstitutionalPrinciple({ title, description, status }: { title: string; description: string; status: string }) {
+  return (
+    <div className="flex items-start gap-3 px-3 py-2 rounded-lg bg-ouro-bg/20">
+      <Check size={14} className="text-ouro-success mt-0.5 flex-shrink-0" />
+      <div>
+        <div className="text-xs font-medium">{title}</div>
+        <div className="text-[10px] text-ouro-muted mt-0.5">{description}</div>
       </div>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h2 className="text-sm font-semibold text-ouro-muted mb-3">{title}</h2>
-      {children}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: any }) {
-  return (
-    <div className="flex justify-between py-1.5 border-b border-ouro-border/20 last:border-0">
-      <span className="text-xs text-ouro-muted">{label}</span>
-      <span className="text-xs text-ouro-text font-medium">{String(value)}</span>
     </div>
   );
 }
